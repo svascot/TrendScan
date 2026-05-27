@@ -52,7 +52,7 @@ function LoginForm() {
           password,
           options: {
             emailRedirectTo: typeof window !== "undefined"
-              ? `${window.location.origin}/scanner`
+              ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`
               : undefined,
           },
         });

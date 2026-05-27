@@ -35,15 +35,126 @@ cp .env.local.example .env.local
 #   SUPABASE_SERVICE_ROLE_KEY                (from your Supabase project)
 
 # 3. Apply database migrations.
-# In Supabase dashboard → SQL Editor, paste each file in order:
-#   supabase/migrations/0001_user_trades.sql
-#   supabase/migrations/0002_user_settings.sql
-#   supabase/migrations/0003_rls.sql
+# In Supabase dashboard → SQL Editor, run the consolidated bootstrap (idempotent):
+#   supabase/migrations/bootstrap.sql
+# Or paste the individual files in order (0001 → 0002 → 0003 → 0004).
 
-# 4. Run
+# 4. Configure auth — see "Supabase auth configuration" below.
+
+# 5. Run
 npm run dev
 # → http://localhost:3000
 ```
+
+## Supabase auth configuration
+
+### Redirect URLs
+
+In **Authentication → URL Configuration**:
+
+**Site URL** — set to the environment you're testing in (`http://localhost:3000` for dev, `https://trend-scan.vercel.app` once deployed).
+
+**Redirect URLs** — paste these so email confirmation links resolve through the `/auth/callback` route the app provides:
+
+```
+https://trend-scan.vercel.app/auth/callback
+https://trend-scan.vercel.app/auth/callback?next=**
+https://trend-scan-*.vercel.app/auth/callback
+https://trend-scan-*.vercel.app/auth/callback?next=**
+http://localhost:3000/auth/callback
+http://localhost:3000/auth/callback?next=**
+```
+
+`**` is Supabase's glob wildcard for "anything including slashes" and is what allows the `?next=/scanner` query string through the allowlist.
+
+### Branded email template — "Confirm signup"
+
+In **Authentication → Email Templates → Confirm signup**, replace the default HTML with the template below. It matches the TrendScan dark / emerald aesthetic and uses Supabase's `{{ .Email }}`, `{{ .ConfirmationURL }}`, and `{{ .RedirectTo }}` variables.
+
+> **Subject:** `Confirm your TrendScan account`
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ .Email }} - Confirm Your TrendScan Account</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="background-color: #0f172a; padding: 48px 20px;">
+    <tr>
+      <td align="center">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 500px; background-color: #1e293b; border-radius: 12px; border: 1px solid #334155; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);">
+
+          <tr>
+            <td style="padding: 32px 32px 16px 32px; text-align: left;">
+              <div style="font-size: 22px; font-weight: 700; color: #34d399; letter-spacing: -0.05em; display: inline-block;">
+                [T] TrendScan
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 0 32px 32px 32px;">
+              <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 600; color: #f8fafc; letter-spacing: -0.025em;">
+                {{ .Email }} - Confirm your email address
+              </h2>
+              <p style="margin: 0 0 24px 0; font-size: 15px; line-height: 1.6; color: #94a3b8;">
+                Welcome to the platform. Follow the verification secure link below to validate your email address, activate your data isolation profile, and finish setting up your dashboard.
+              </p>
+
+              <table border="0" cellpadding="0" cellspacing="0" style="margin-bottom: 24px;">
+                <tr>
+                  <td align="center" style="border-radius: 6px; background-color: #10b981;">
+                    <a href="{{ .ConfirmationURL }}" target="_blank" style="display: inline-block; padding: 12px 24px; font-size: 15px; font-weight: 600; color: #ffffff; text-decoration: none; border-radius: 6px; letter-spacing: -0.01em;">
+                      Confirm Email Address
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #64748b; border-top: 1px solid #334155; padding-top: 16px;">
+                <strong>Security note:</strong> This confirmation link is uniquely bound to your account authorization step and will expire shortly. If you did not initiate this request, you can safely disregard this message.
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding: 16px 32px; background-color: #0f172a; text-align: center; border-top: 1px solid #334155;">
+              <p style="margin: 0; font-size: 12px; color: #475569;">
+                Quantitative Momentum Engine Core v1.0 - santiagovasco.com
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+```
+
+**Template variables in play:**
+
+| Variable | Provided by Supabase as | Used for |
+| --- | --- | --- |
+| `{{ .Email }}` | The recipient's email address | Personalising the subject and headline |
+| `{{ .ConfirmationURL }}` | The signed verification link Supabase mints, already pointed at the Site URL + `emailRedirectTo` | The CTA button `href` |
+| `{{ .RedirectTo }}` | The raw `emailRedirectTo` value the client SDK sent | Optional — surface for debugging only |
+
+When updating the template, **save and send yourself a test confirmation** before announcing changes to users. Supabase ships any HTML save immediately — there's no preview/revert.
+
+### Other email templates
+
+The same brand pattern (slate-900 canvas, emerald CTA, mono `[T] TrendScan` wordmark) can be cloned onto the other Supabase templates as you build them out:
+
+- **Magic link** — replace the headline with "Your secure sign-in link".
+- **Change email address** — confirm new address; same CTA style.
+- **Reset password** — replace the security-note copy.
+
+Keep the footer line `Quantitative Momentum Engine Core v1.0 - santiagovasco.com` consistent across all of them so users learn to recognise legitimate TrendScan mail at a glance.
 
 ## Project layout
 
