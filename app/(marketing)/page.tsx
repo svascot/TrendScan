@@ -102,8 +102,19 @@ export default function MarketingPage() {
       </section>
 
       <footer className="border-t border-slate-800 bg-slate-900">
-        <div className="mx-auto max-w-6xl px-6 py-8 text-center text-xs text-slate-500">
-          TrendScan is an informational tool. It does not execute trades and is not financial advice.
+        <div className="mx-auto max-w-6xl space-y-2 px-6 py-8 text-center text-xs text-slate-500">
+          <p>TrendScan is an informational tool. It does not execute trades and is not financial advice.</p>
+          <p>
+            Created by{" "}
+            <a
+              href="https://santiagovasco.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-emerald-400 hover:underline"
+            >
+              santiagovasco.com
+            </a>
+          </p>
         </div>
       </footer>
     </main>
