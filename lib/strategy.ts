@@ -8,6 +8,7 @@ export interface StrategySettings {
   maShort: number;
   maLong: number;
   scannerLimit: number;
+  refreshIntervalMinutes: number;
 }
 
 export const STRATEGY_DEFAULTS: StrategySettings = {
@@ -18,6 +19,7 @@ export const STRATEGY_DEFAULTS: StrategySettings = {
   maShort: 50,
   maLong: 200,
   scannerLimit: 10,
+  refreshIntervalMinutes: 5,
 };
 
 export const strategySchema = z.object({
@@ -28,6 +30,7 @@ export const strategySchema = z.object({
   maShort: z.number().int().min(5).max(100),
   maLong: z.number().int().min(50).max(400),
   scannerLimit: z.number().int().min(1).max(100),
+  refreshIntervalMinutes: z.number().int().min(1).max(1440),
 }).refine((s) => s.rsiHigh > s.rsiLow, {
   message: "rsiHigh must be greater than rsiLow",
   path: ["rsiHigh"],
@@ -56,6 +59,7 @@ export type DbSettingsRow = {
   ma_short: number;
   ma_long: number;
   scanner_limit: number;
+  refresh_interval_minutes: number;
   updated_at?: string;
 };
 
@@ -69,6 +73,10 @@ export function settingsFromRow(row: DbSettingsRow | null): StrategySettings {
     maShort: Number(row.ma_short),
     maLong: Number(row.ma_long),
     scannerLimit: Number(row.scanner_limit),
+    refreshIntervalMinutes:
+      row.refresh_interval_minutes == null
+        ? STRATEGY_DEFAULTS.refreshIntervalMinutes
+        : Number(row.refresh_interval_minutes),
   };
 }
 
@@ -82,5 +90,6 @@ export function settingsToRow(userId: string, s: StrategySettings): DbSettingsRo
     ma_short: s.maShort,
     ma_long: s.maLong,
     scanner_limit: s.scannerLimit,
+    refresh_interval_minutes: s.refreshIntervalMinutes,
   };
 }

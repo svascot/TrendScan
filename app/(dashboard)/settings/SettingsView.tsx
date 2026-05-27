@@ -21,6 +21,7 @@ interface FormState {
   maShort: string;
   maLong: string;
   scannerLimit: string;
+  refreshIntervalMinutes: string;
 }
 
 function toForm(s: StrategySettings): FormState {
@@ -32,6 +33,7 @@ function toForm(s: StrategySettings): FormState {
     maShort: s.maShort.toString(),
     maLong: s.maLong.toString(),
     scannerLimit: s.scannerLimit.toString(),
+    refreshIntervalMinutes: s.refreshIntervalMinutes.toString(),
   };
 }
 
@@ -65,6 +67,7 @@ export function SettingsView({ initial }: Props) {
       maShort: parseInt(form.maShort, 10),
       maLong: parseInt(form.maLong, 10),
       scannerLimit: parseInt(form.scannerLimit, 10),
+      refreshIntervalMinutes: parseInt(form.refreshIntervalMinutes, 10),
     });
 
     if (!parsed.success) {
@@ -86,6 +89,7 @@ export function SettingsView({ initial }: Props) {
         ma_short: parsed.data.maShort,
         ma_long: parsed.data.maLong,
         scanner_limit: parsed.data.scannerLimit,
+        refresh_interval_minutes: parsed.data.refreshIntervalMinutes,
       };
       const { error } = await supabase
         .from("user_settings")
@@ -131,6 +135,16 @@ export function SettingsView({ initial }: Props) {
 
         <Section title="Scanner Display" hint="How many ranked setups to show by default.">
           <Field label="Top N" value={form.scannerLimit} onChange={(v) => update("scannerLimit", v)} step="1" />
+        </Section>
+
+        <Section title="Auto-Refresh" hint="How often the scanner re-runs automatically while the dashboard is open. Minimum 1 minute.">
+          <Field
+            label="Interval"
+            suffix="min"
+            value={form.refreshIntervalMinutes}
+            onChange={(v) => update("refreshIntervalMinutes", v)}
+            step="1"
+          />
         </Section>
 
         {error && (

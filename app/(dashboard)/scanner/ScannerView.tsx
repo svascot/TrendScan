@@ -40,6 +40,10 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
       }
       const json = (await res.json()) as ScanResponse;
       setData(json);
+      const stamp = new Date(json.generatedAt).toLocaleString(undefined, {
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+      });
+      console.log(`[TrendScan] Scanner list updated at ${stamp} — ${json.count} setups (top ${l}).`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -48,6 +52,12 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
   }, []);
 
   useEffect(() => { fetchScan(limit); }, [limit, fetchScan]);
+
+  useEffect(() => {
+    const minutes = Math.max(1, settings.refreshIntervalMinutes);
+    const id = setInterval(() => { fetchScan(limit); }, minutes * 60_000);
+    return () => clearInterval(id);
+  }, [limit, fetchScan, settings.refreshIntervalMinutes]);
 
   async function onAdd(r: ScanResult) {
     setAddingTicker(r.ticker);
@@ -78,7 +88,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
     const d = new Date(data.generatedAt);
     return d.toLocaleString(undefined, {
       month: "short", day: "numeric", year: "numeric",
-      hour: "2-digit", minute: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
     });
   }, [data]);
 
@@ -94,8 +104,17 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
           </h1>
           <p className="mt-1 text-sm text-slate-400">
             Showing the absolute highest-ranked mathematical setups.
-            {generated && <span className="ml-2 text-slate-500">Updated: {generated}</span>}
           </p>
+          {generated && (
+            <p className="mt-1 text-xs text-slate-500">
+              <span className={loading ? "text-emerald-300" : ""}>
+                {loading ? "Refreshing…" : `Last updated at ${generated}`}
+              </span>
+              <span className="ml-2 text-slate-600">
+                · auto-refresh every {settings.refreshIntervalMinutes} min
+              </span>
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -111,14 +130,6 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
               <option key={n} value={n}>Top {n}</option>
             ))}
           </select>
-          <button
-            type="button"
-            onClick={() => fetchScan(limit)}
-            disabled={loading}
-            className="rounded-md border border-slate-700 px-3 py-1.5 text-sm text-slate-200 transition hover:border-emerald-400 hover:text-emerald-300 disabled:opacity-50"
-          >
-            {loading ? "Scanning…" : "Refresh"}
-          </button>
         </div>
       </header>
 
