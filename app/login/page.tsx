@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getSiteUrl } from "@/lib/site";
 
 type Mode = "signin" | "signup";
 
@@ -51,9 +52,7 @@ function LoginForm() {
           email,
           password,
           options: {
-            emailRedirectTo: typeof window !== "undefined"
-              ? `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirectTo)}`
-              : undefined,
+            emailRedirectTo: `${getSiteUrl()}/auth/callback?next=${encodeURIComponent(redirectTo)}`,
           },
         });
         if (error) throw error;
