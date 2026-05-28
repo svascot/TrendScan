@@ -47,11 +47,16 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
     });
   }, [data, filters]);
 
-  const fetchScan = useCallback(async (l: number) => {
+  const refreshMinutes = Math.max(1, settings.refreshIntervalMinutes);
+
+  const fetchScan = useCallback(async (l: number, maxAgeSeconds: number) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/scan?limit=${l}`, { cache: "no-store" });
+      const res = await fetch(
+        `/api/scan?limit=${l}&maxAgeSeconds=${maxAgeSeconds}`,
+        { cache: "no-store" },
+      );
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? `Scan failed (${res.status})`);
@@ -69,13 +74,16 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
     }
   }, []);
 
-  useEffect(() => { fetchScan(limit); }, [limit, fetchScan]);
+  useEffect(() => {
+    fetchScan(limit, refreshMinutes * 60);
+  }, [limit, fetchScan, refreshMinutes]);
 
   useEffect(() => {
-    const minutes = Math.max(1, settings.refreshIntervalMinutes);
-    const id = setInterval(() => { fetchScan(limit); }, minutes * 60_000);
+    const id = setInterval(() => {
+      fetchScan(limit, refreshMinutes * 60);
+    }, refreshMinutes * 60_000);
     return () => clearInterval(id);
-  }, [limit, fetchScan, settings.refreshIntervalMinutes]);
+  }, [limit, fetchScan, refreshMinutes]);
 
   async function onAdd(r: ScanResult) {
     setAddingTicker(r.ticker);

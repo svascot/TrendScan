@@ -14,7 +14,8 @@ import { universeMinus } from "@/lib/universe";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour upper bound (client can request shorter)
+const DEFAULT_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes when client doesn't specify
 type CacheEntry = { at: number; payload: ScanResponse };
 const cache = new Map<string, CacheEntry>();
 
@@ -43,15 +44,23 @@ function parseExclude(s: string | null): string[] {
   return s.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
 }
 
+function parseMaxAgeMs(s: string | null): number {
+  if (!s) return DEFAULT_MAX_AGE_MS;
+  const n = parseInt(s, 10);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_MAX_AGE_MS;
+  return Math.min(n * 1000, CACHE_TTL_MS);
+}
+
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const limit = parseLimit(url.searchParams.get("limit"));
   const risk = parseRisk(url.searchParams.get("risk"));
   const exclude = parseExclude(url.searchParams.get("exclude"));
+  const maxAgeMs = parseMaxAgeMs(url.searchParams.get("maxAgeSeconds"));
 
   const cacheKey = `${risk}|${exclude.sort().join(",")}`;
   const cached = cache.get(cacheKey);
-  if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+  if (cached && Date.now() - cached.at < maxAgeMs) {
     return NextResponse.json(sliceTop(cached.payload, limit));
   }
 
