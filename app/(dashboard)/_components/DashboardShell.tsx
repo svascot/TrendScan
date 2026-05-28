@@ -88,16 +88,19 @@ export function DashboardShell({ email, children }: Props) {
 
         <main className="flex-1 overflow-x-auto px-6 py-6">{children}</main>
 
-        <footer className="border-t border-slate-800 bg-slate-950/40 px-6 py-3 text-center text-xs text-slate-500">
-          Created by{" "}
-          <a
-            href="https://santiagovasco.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-emerald-400 hover:underline"
-          >
-            santiagovasco.com
-          </a>
+        <footer className="space-y-1 border-t border-slate-800 bg-slate-950/40 px-6 py-3 text-center text-xs text-slate-500">
+          <p>TrendScan is an informational tool. It does not execute trades and is not financial advice.</p>
+          <p>
+            Created by{" "}
+            <a
+              href="https://santiagovasco.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-emerald-400 hover:underline"
+            >
+              santiagovasco.com
+            </a>
+          </p>
         </footer>
       </div>
     </div>

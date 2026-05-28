@@ -1,5 +1,6 @@
 import { meanLast, rsi14, sma } from "./indicators";
 import { STRATEGY_DEFAULTS } from "./strategy";
+import { getIndicesFor, type IndexName } from "./universe";
 
 export interface DailyBar {
   c: number; // close
@@ -59,6 +60,7 @@ export interface ScanResult {
   avgVolume20: number;
   score: number; // 0..100
   tier: "High" | "Med" | "Low";
+  indices: IndexName[];
   breakdown: SetupBreakdown;
 }
 
@@ -124,6 +126,7 @@ export function evaluateTicker(
     avgVolume20: Math.round(avgVol20),
     score,
     tier,
+    indices: getIndicesFor(ticker),
     breakdown: {
       rule1MacroPass: rule1,
       rule2MomentumPass: rule2,

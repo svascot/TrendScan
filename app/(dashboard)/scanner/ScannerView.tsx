@@ -28,6 +28,24 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
   const [addingTicker, setAddingTicker] = useState<string | null>(null);
   const [addedTickers, setAddedTickers] = useState<Set<string>>(new Set());
   const [auditRow, setAuditRow] = useState<ScanResult | null>(null);
+  const [filters, setFilters] = useState({ sp500: true, nasdaq100: true });
+
+  const toggleFilter = (key: "sp500" | "nasdaq100") => {
+    setFilters((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      if (!next.sp500 && !next.nasdaq100) return prev;
+      return next;
+    });
+  };
+
+  const filteredStocks = useMemo(() => {
+    if (!data) return [];
+    return data.results.filter((stock) => {
+      if (filters.sp500 && stock.indices.includes("sp500")) return true;
+      if (filters.nasdaq100 && stock.indices.includes("nasdaq100")) return true;
+      return false;
+    });
+  }, [data, filters]);
 
   const fetchScan = useCallback(async (l: number) => {
     setLoading(true);
@@ -117,7 +135,21 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <IndexToggle
+              label="S&P 500"
+              active={filters.sp500}
+              lastActive={filters.sp500 && !filters.nasdaq100}
+              onClick={() => toggleFilter("sp500")}
+            />
+            <IndexToggle
+              label="Nasdaq-100"
+              active={filters.nasdaq100}
+              lastActive={filters.nasdaq100 && !filters.sp500}
+              onClick={() => toggleFilter("nasdaq100")}
+            />
+          </div>
           <label className="font-mono text-xs uppercase tracking-widest text-slate-400">
             Show
           </label>
@@ -159,7 +191,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
                 </td>
               </tr>
             )}
-            {!loading && data && data.results.length === 0 && (
+            {!loading && data && filteredStocks.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
                   No setups passed all four rules today. The market may be overextended or
@@ -167,7 +199,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
                 </td>
               </tr>
             )}
-            {data?.results.map((r) => {
+            {filteredStocks.map((r) => {
               const { targetTp, targetSl } = computeTpSl(r.close, settings);
               const added = addedTickers.has(r.ticker);
               return (
@@ -233,6 +265,39 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
         />
       )}
     </div>
+  );
+}
+
+function IndexToggle({
+  label,
+  active,
+  lastActive,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  lastActive: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={active}
+      aria-disabled={lastActive}
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition ${
+        active
+          ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+          : "border-slate-700 bg-slate-950 text-slate-400 hover:border-slate-600 hover:text-slate-200"
+      } ${lastActive ? "cursor-not-allowed opacity-60" : ""}`}
+    >
+      <span
+        aria-hidden
+        className={`h-2 w-2 rounded-full ${active ? "bg-emerald-500" : "bg-slate-600"}`}
+      />
+      {label}
+    </button>
   );
 }
 
