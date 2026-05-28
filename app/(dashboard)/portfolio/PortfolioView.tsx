@@ -1,17 +1,26 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { etoroLink, formatPrice } from "@/lib/format";
 import type { TradeStatus, UserTradeRow } from "@/lib/db/trades";
+import type { ChartBar } from "@/lib/scanner";
+import { StockTargetChart } from "../_components/StockTargetChart";
+
+export interface ChartSnapshot {
+  chartBars: ChartBar[];
+  currentPrice: number;
+}
 
 interface Props {
   open: UserTradeRow[];
   archived: UserTradeRow[];
+  charts: Record<string, ChartSnapshot>;
 }
 
-export function PortfolioView({ open, archived }: Props) {
+export function PortfolioView({ open, archived, charts }: Props) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +85,7 @@ export function PortfolioView({ open, archived }: Props) {
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-800 bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400">
               <tr>
+                <th className="px-2 py-3 w-8" />
                 <th className="px-4 py-3">Ticker</th>
                 <th className="px-4 py-3 text-right">Entry</th>
                 <th className="px-4 py-3 text-right">Target TP</th>
@@ -87,57 +97,98 @@ export function PortfolioView({ open, archived }: Props) {
             <tbody>
               {open.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-slate-400">
+                  <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
                     No open trades. Add one from the Scanner.
                   </td>
                 </tr>
               )}
-              {open.map((t) => (
-                <tr key={t.id} className="border-b border-slate-800/60 last:border-b-0 hover:bg-slate-800/30">
-                  <td className="px-4 py-3">
-                    <a
-                      href={etoroLink(t.ticker)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono font-semibold text-emerald-400 hover:underline"
-                    >
-                      {t.ticker}
-                    </a>
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono">{formatPrice(Number(t.entry_price))}</td>
-                  <td className="px-4 py-3 text-right font-mono text-emerald-300">{formatPrice(Number(t.target_tp))}</td>
-                  <td className="px-4 py-3 text-right font-mono text-red-300">{formatPrice(Number(t.target_sl))}</td>
-                  <td className="px-4 py-3 text-xs text-slate-400">{formatDate(t.created_at)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        disabled={busyId === t.id}
-                        onClick={() => setStatus(t, "HIT_TP")}
-                        className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
-                      >
-                        Mark TP
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === t.id}
-                        onClick={() => setStatus(t, "HIT_SL")}
-                        className="rounded border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-xs text-red-300 hover:bg-red-500/20 disabled:opacity-50"
-                      >
-                        Mark SL
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === t.id}
-                        onClick={() => setStatus(t, "CLOSED")}
-                        className="rounded border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:border-slate-500 hover:text-slate-100 disabled:opacity-50"
-                      >
-                        Close
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {open.map((t) => {
+                const snapshot = charts[t.ticker];
+                const isExpanded = expandedId === t.id;
+                return (
+                  <Fragment key={t.id}>
+                    <tr className="border-b border-slate-800/60 last:border-b-0 hover:bg-slate-800/30">
+                      <td className="px-2 py-3">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedId(isExpanded ? null : t.id)}
+                          aria-expanded={isExpanded}
+                          aria-label={isExpanded ? `Collapse ${t.ticker} chart` : `Expand ${t.ticker} chart`}
+                          className="flex h-6 w-6 items-center justify-center rounded border border-slate-700 text-slate-400 transition hover:border-emerald-400 hover:text-emerald-300"
+                        >
+                          <span
+                            className={`inline-block font-mono text-[10px] transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                          >
+                            ▶
+                          </span>
+                        </button>
+                      </td>
+                      <td className="px-4 py-3">
+                        <a
+                          href={etoroLink(t.ticker)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono font-semibold text-emerald-400 hover:underline"
+                        >
+                          {t.ticker}
+                        </a>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono">{formatPrice(Number(t.entry_price))}</td>
+                      <td className="px-4 py-3 text-right font-mono text-emerald-300">{formatPrice(Number(t.target_tp))}</td>
+                      <td className="px-4 py-3 text-right font-mono text-red-300">{formatPrice(Number(t.target_sl))}</td>
+                      <td className="px-4 py-3 text-xs text-slate-400">{formatDate(t.created_at)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            disabled={busyId === t.id}
+                            onClick={() => setStatus(t, "HIT_TP")}
+                            className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+                          >
+                            Mark TP
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === t.id}
+                            onClick={() => setStatus(t, "HIT_SL")}
+                            className="rounded border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-xs text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+                          >
+                            Mark SL
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === t.id}
+                            onClick={() => setStatus(t, "CLOSED")}
+                            className="rounded border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:border-slate-500 hover:text-slate-100 disabled:opacity-50"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    {isExpanded && (
+                      <tr className="border-b border-slate-800/60 bg-slate-950/40">
+                        <td colSpan={7} className="px-4 py-4">
+                          {snapshot ? (
+                            <StockTargetChart
+                              ticker={t.ticker}
+                              currentPrice={snapshot.currentPrice}
+                              tpTargetPrice={Number(t.target_tp)}
+                              slTargetPrice={Number(t.target_sl)}
+                              historicalData={snapshot.chartBars}
+                              height={240}
+                            />
+                          ) : (
+                            <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-4 py-6 text-center text-xs text-slate-500">
+                              Live bars unavailable for {t.ticker}. Targets stay locked at TP {formatPrice(Number(t.target_tp))} / SL {formatPrice(Number(t.target_sl))}.
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
