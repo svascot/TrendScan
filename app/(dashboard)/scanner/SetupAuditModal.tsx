@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import type { ScanResult } from "@/lib/scanner";
-import type { StrategySettings } from "@/lib/strategy";
+import { computeTpSl, type StrategySettings } from "@/lib/strategy";
+import { StockTargetChart } from "../_components/StockTargetChart";
 
 interface Props {
   row: ScanResult;
@@ -23,6 +24,7 @@ export function SetupAuditModal({ row, settings, onClose }: Props) {
   const f = (n: number) => n.toFixed(2);
   const pct = (n: number) => `${(n * 100).toFixed(2)}%`;
   const volMillions = (n: number) => `${(n / 1_000_000).toFixed(1)}M`;
+  const { targetTp, targetSl } = computeTpSl(row.close, settings);
 
   return (
     <div
@@ -31,9 +33,9 @@ export function SetupAuditModal({ row, settings, onClose }: Props) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-3xl overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl"
+        className="flex max-h-[calc(100vh-3rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl"
       >
-        <header className="flex items-start justify-between border-b border-slate-800 bg-slate-950/60 px-6 py-4">
+        <header className="flex flex-shrink-0 items-start justify-between border-b border-slate-800 bg-slate-950/60 px-6 py-4">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-emerald-400">
               Setup Audit Log
@@ -49,7 +51,7 @@ export function SetupAuditModal({ row, settings, onClose }: Props) {
           </button>
         </header>
 
-        <div className="space-y-6 px-6 py-6 text-sm">
+        <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6 text-sm">
           <section>
             <h3 className="font-mono text-xs uppercase tracking-widest text-slate-400">Summary</h3>
             <p className="mt-2 leading-relaxed text-slate-200">
@@ -57,6 +59,19 @@ export function SetupAuditModal({ row, settings, onClose }: Props) {
               momentum. Volume confirms the move at {b.volRatio.toFixed(2)}× the 20-day average,
               while RSI of {row.rsi14.toFixed(1)} indicates remaining runway before saturation.
             </p>
+          </section>
+
+          <section>
+            <h3 className="mb-3 font-mono text-xs uppercase tracking-widest text-slate-400">
+              Target Zones · TP +{(settings.tpPct * 100).toFixed(1)}% / SL −{(settings.slPct * 100).toFixed(1)}%
+            </h3>
+            <StockTargetChart
+              ticker={row.ticker}
+              currentPrice={row.close}
+              tpTargetPrice={targetTp}
+              slTargetPrice={targetSl}
+              historicalData={row.chartBars}
+            />
           </section>
 
           <section>

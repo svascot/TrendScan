@@ -50,6 +50,11 @@ export interface SetupBreakdown {
   scoreVolume: number; // 0..20
 }
 
+export interface ChartBar {
+  date: string; // YYYY-MM-DD
+  close: number;
+}
+
 export interface ScanResult {
   ticker: string;
   close: number;
@@ -61,7 +66,18 @@ export interface ScanResult {
   score: number; // 0..100
   tier: "High" | "Med" | "Low";
   indices: IndexName[];
+  chartBars: ChartBar[]; // last ~30 daily closes for visual context
   breakdown: SetupBreakdown;
+}
+
+const CHART_BARS_LOOKBACK = 90;
+
+function lastChartBars(bars: readonly DailyBar[]): ChartBar[] {
+  const slice = bars.slice(-CHART_BARS_LOOKBACK);
+  return slice.map((b) => ({
+    date: b.t.slice(0, 10),
+    close: round2(b.c),
+  }));
 }
 
 const VELOCITY_CLAMP_DEFAULT = 0.15;
@@ -127,6 +143,7 @@ export function evaluateTicker(
     score,
     tier,
     indices: getIndicesFor(ticker),
+    chartBars: lastChartBars(bars),
     breakdown: {
       rule1MacroPass: rule1,
       rule2MomentumPass: rule2,
