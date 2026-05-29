@@ -125,7 +125,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
           <p className="font-mono text-xs uppercase tracking-[0.3em] text-emerald-400">
             Daily Scanner Report
           </p>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-50">
+          <h1 className="mt-2 text-xl font-semibold text-slate-50 sm:text-2xl">
             Market Universe: S&amp;P 500 &amp; Nasdaq 100
           </h1>
           <p className="mt-1 text-sm text-slate-400">
@@ -179,7 +179,90 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+      {/* Mobile card layout */}
+      <div className="space-y-3 md:hidden">
+        {loading && !data && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-10 text-center text-sm text-slate-400">
+            <span className="inline-flex items-center gap-3">
+              <span
+                aria-hidden
+                className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400"
+              />
+              Running scanner…
+            </span>
+          </div>
+        )}
+        {!loading && data && filteredStocks.length === 0 && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-10 text-center text-sm text-slate-400">
+            No setups passed all four rules today. Re-check tomorrow.
+          </div>
+        )}
+        {filteredStocks.map((r) => {
+          const { targetTp, targetSl } = computeTpSl(r.close, settings);
+          const added = addedTickers.has(r.ticker);
+          return (
+            <article
+              key={r.ticker}
+              className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <a
+                    href={etoroLink(r.ticker)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-lg font-semibold text-emerald-400 hover:underline"
+                  >
+                    {r.ticker}
+                  </a>
+                  <p className="mt-0.5 font-mono text-sm text-slate-100">{formatPrice(r.close)}</p>
+                </div>
+                <ScoreCell score={r.score} tier={r.tier} />
+              </div>
+
+              <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-800/60 pt-3 text-sm">
+                <div>
+                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                    Target TP
+                  </dt>
+                  <dd className="mt-1 font-mono text-emerald-300">{formatPrice(targetTp)}</dd>
+                </div>
+                <div className="text-right">
+                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                    Target SL
+                  </dt>
+                  <dd className="mt-1 font-mono text-red-300">{formatPrice(targetSl)}</dd>
+                </div>
+              </dl>
+
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAuditRow(r)}
+                  className="flex-1 rounded-md border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
+                >
+                  Info
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onAdd(r)}
+                  disabled={addingTicker === r.ticker || added}
+                  className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition ${
+                    added
+                      ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                      : "border border-emerald-500/40 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
+                  } disabled:opacity-60`}
+                >
+                  {added ? "Added" : addingTicker === r.ticker ? "Adding…" : "+ Add"}
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      {/* Desktop table layout */}
+      <div className="hidden overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40 md:block">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-800 bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400">
             <tr>

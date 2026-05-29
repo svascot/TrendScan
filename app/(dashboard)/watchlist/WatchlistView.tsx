@@ -249,7 +249,7 @@ export function WatchlistView({ settings }: { settings: StrategySettings }) {
           <p className="font-mono text-xs uppercase tracking-[0.3em] text-amber-300">
             Your Watchlist
           </p>
-          <h1 className="mt-2 text-2xl font-semibold text-slate-50">
+          <h1 className="mt-2 text-xl font-semibold text-slate-50 sm:text-2xl">
             Tracked Tickers
           </h1>
           <p className="mt-1 text-sm text-slate-400">
@@ -336,7 +336,93 @@ export function WatchlistView({ settings }: { settings: StrategySettings }) {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+      {/* Mobile card layout */}
+      <div className="space-y-3 md:hidden">
+        {loading && !data && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-10 text-center text-sm text-slate-400">
+            Loading your watchlist…
+          </div>
+        )}
+        {!loading && data && stocks.length === 0 && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-10 text-center text-sm text-slate-400">
+            Your watchlist is empty. Add a ticker above.
+          </div>
+        )}
+        {stocks.map((r) => {
+          const { targetTp, targetSl } = computeTpSl(r.close, settings);
+          const passing = isTrendPassing(r);
+          return (
+            <article
+              key={r.ticker}
+              className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <a
+                    href={etoroLink(r.ticker)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-lg font-semibold text-emerald-400 hover:underline"
+                  >
+                    {r.ticker}
+                  </a>
+                  <p className="mt-0.5 font-mono text-sm text-slate-100">{formatPrice(r.close)}</p>
+                </div>
+                <ScoreCell score={r.score} tier={r.tier} dimmed={!passing} />
+              </div>
+
+              <div className="mt-3">
+                {passing ? (
+                  <span className="inline-flex items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-300">
+                    Setup Active
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-red-300">
+                    No Setup · Trend Filter Failed
+                  </span>
+                )}
+              </div>
+
+              <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-800/60 pt-3 text-sm">
+                <div>
+                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                    Target TP
+                  </dt>
+                  <dd className="mt-1 font-mono text-emerald-300">{formatPrice(targetTp)}</dd>
+                </div>
+                <div className="text-right">
+                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                    Target SL
+                  </dt>
+                  <dd className="mt-1 font-mono text-red-300">{formatPrice(targetSl)}</dd>
+                </div>
+              </dl>
+
+              <div className="mt-4 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAuditRow(r)}
+                  className="flex-1 rounded-md border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
+                >
+                  Info
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemove(r.ticker)}
+                  disabled={removingTicker === r.ticker}
+                  aria-label={`Remove ${r.ticker}`}
+                  className="flex-1 rounded-md border border-slate-700 px-3 py-2 text-xs font-medium text-slate-400 transition hover:border-red-500/60 hover:text-red-300 disabled:opacity-50"
+                >
+                  {removingTicker === r.ticker ? "Removing…" : "Remove"}
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      {/* Desktop table layout */}
+      <div className="hidden overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40 md:block">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-800 bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400">
             <tr>
