@@ -65,7 +65,7 @@ export function PortfolioView({ open, archived, charts }: Props) {
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-emerald-400">
           Capital Allocation Tracker
         </p>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-50">My Active Portfolio</h1>
+        <h1 className="mt-2 text-xl font-semibold text-slate-50 sm:text-2xl">My Active Portfolio</h1>
         <p className="mt-1 text-sm text-slate-400">
           Monitor your open trades. Update status once filled on your broker.
         </p>
@@ -81,7 +81,124 @@ export function PortfolioView({ open, archived, charts }: Props) {
         <h2 className="mb-3 font-mono text-xs uppercase tracking-widest text-slate-400">
           Open Trades ({open.length})
         </h2>
-        <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+
+        {/* Mobile card layout */}
+        <div className="space-y-3 md:hidden">
+          {open.length === 0 && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-10 text-center text-sm text-slate-400">
+              No open trades. Add one from the Scanner.
+            </div>
+          )}
+          {open.map((t) => {
+            const snapshot = charts[t.ticker];
+            const isExpanded = expandedId === t.id;
+            return (
+              <article
+                key={t.id}
+                className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <a
+                      href={etoroLink(t.ticker)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-mono text-lg font-semibold text-emerald-400 hover:underline"
+                    >
+                      {t.ticker}
+                    </a>
+                    <p className="mt-0.5 text-[11px] text-slate-500">
+                      Opened {formatDate(t.created_at)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isExpanded ? null : t.id)}
+                    aria-expanded={isExpanded}
+                    aria-label={isExpanded ? `Collapse ${t.ticker} chart` : `Expand ${t.ticker} chart`}
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-slate-700 text-slate-400 transition hover:border-emerald-400 hover:text-emerald-300"
+                  >
+                    <span
+                      className={`inline-block font-mono text-[10px] transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                    >
+                      ▶
+                    </span>
+                  </button>
+                </div>
+
+                <dl className="mt-3 grid grid-cols-3 gap-3 border-t border-slate-800/60 pt-3 text-sm">
+                  <div>
+                    <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                      Entry
+                    </dt>
+                    <dd className="mt-1 font-mono text-slate-100">{formatPrice(Number(t.entry_price))}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                      TP
+                    </dt>
+                    <dd className="mt-1 font-mono text-emerald-300">{formatPrice(Number(t.target_tp))}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                      SL
+                    </dt>
+                    <dd className="mt-1 font-mono text-red-300">{formatPrice(Number(t.target_sl))}</dd>
+                  </div>
+                </dl>
+
+                {isExpanded && (
+                  <div className="mt-3">
+                    {snapshot ? (
+                      <StockTargetChart
+                        ticker={t.ticker}
+                        currentPrice={snapshot.currentPrice}
+                        tpTargetPrice={Number(t.target_tp)}
+                        slTargetPrice={Number(t.target_sl)}
+                        historicalData={snapshot.chartBars}
+                        height={220}
+                      />
+                    ) : (
+                      <div className="rounded-lg border border-slate-800 bg-slate-900/40 px-4 py-4 text-center text-xs text-slate-500">
+                        Live bars unavailable for {t.ticker}.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    disabled={busyId === t.id}
+                    onClick={() => setStatus(t, "HIT_TP")}
+                    className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-2 text-xs font-medium text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-50"
+                  >
+                    Mark TP
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyId === t.id}
+                    onClick={() => setStatus(t, "HIT_SL")}
+                    className="rounded-md border border-red-500/40 bg-red-500/10 px-2 py-2 text-xs font-medium text-red-300 transition hover:bg-red-500/20 disabled:opacity-50"
+                  >
+                    Mark SL
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busyId === t.id}
+                    onClick={() => setStatus(t, "CLOSED")}
+                    className="rounded-md border border-slate-700 px-2 py-2 text-xs font-medium text-slate-300 transition hover:border-slate-500 hover:text-slate-100 disabled:opacity-50"
+                  >
+                    Close
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        {/* Desktop table layout */}
+        <div className="hidden overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40 md:block">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-slate-800 bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400">
               <tr>
@@ -230,7 +347,83 @@ function ArchivedSection({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+      {/* Mobile card layout */}
+      <div className="space-y-3 md:hidden">
+        {trades.length === 0 && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-10 text-center text-sm text-slate-400">
+            Nothing archived yet.
+          </div>
+        )}
+        {trades.map((t) => {
+          const entry = Number(t.entry_price);
+          const target =
+            t.status === "HIT_TP" ? Number(t.target_tp)
+            : t.status === "HIT_SL" ? Number(t.target_sl)
+            : null;
+          const pct = target !== null ? ((target - entry) / entry) * 100 : null;
+          return (
+            <article
+              key={t.id}
+              className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <a
+                    href={etoroLink(t.ticker)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-lg font-semibold text-emerald-400 hover:underline"
+                  >
+                    {t.ticker}
+                  </a>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    {t.closed_at ? `Closed ${formatDate(t.closed_at)}` : "—"}
+                  </p>
+                </div>
+                <OutcomeBadge status={t.status} />
+              </div>
+
+              <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-800/60 pt-3 text-sm">
+                <div>
+                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                    Entry
+                  </dt>
+                  <dd className="mt-1 font-mono text-slate-100">{formatPrice(entry)}</dd>
+                </div>
+                <div className="text-right">
+                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                    Result
+                  </dt>
+                  <dd className="mt-1 font-mono">
+                    {pct === null ? (
+                      <span className="text-slate-500">—</span>
+                    ) : (
+                      <span className={pct >= 0 ? "text-emerald-300" : "text-red-300"}>
+                        {pct >= 0 ? "+" : ""}
+                        {pct.toFixed(2)}%
+                      </span>
+                    )}
+                  </dd>
+                </div>
+              </dl>
+
+              <div className="mt-4">
+                <button
+                  type="button"
+                  disabled={busyId === t.id}
+                  onClick={() => onDelete(t)}
+                  className="w-full rounded-md border border-slate-800 px-3 py-2 text-xs font-medium text-slate-500 transition hover:border-red-500/40 hover:text-red-300 disabled:opacity-50"
+                >
+                  Delete
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      {/* Desktop table layout */}
+      <div className="hidden overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40 md:block">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-800 bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400">
             <tr>

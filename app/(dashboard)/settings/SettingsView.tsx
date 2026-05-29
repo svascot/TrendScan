@@ -110,14 +110,14 @@ export function SettingsView({ initial }: Props) {
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-emerald-400">
           Your Strategy
         </p>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-50">Trade Parameters</h1>
+        <h1 className="mt-2 text-xl font-semibold text-slate-50 sm:text-2xl">Trade Parameters</h1>
         <p className="mt-1 text-sm text-slate-400">
           These values control your TP/SL targets, scanner filters, and result count. Suggested
           defaults are pre-filled from the system blueprint.
         </p>
       </header>
 
-      <form onSubmit={onSubmit} className="space-y-8 rounded-xl border border-slate-800 bg-slate-900/40 p-6">
+      <form onSubmit={onSubmit} className="space-y-8 rounded-xl border border-slate-800 bg-slate-900/40 p-4 sm:p-6">
         <Section title="Trade Targets" hint="Symmetric 1:2 risk:reward is the system default. Lower TP = easier to hit, lower per-trade payoff.">
           <Field label="Take Profit %" suffix="%" value={form.tpPct} onChange={(v) => update("tpPct", v)} step="0.1" />
           <Field label="Stop Loss %" suffix="%" value={form.slPct} onChange={(v) => update("slPct", v)} step="0.1" />
