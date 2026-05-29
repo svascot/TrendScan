@@ -1,5 +1,24 @@
 # TrendScan — Implementation Plan
 
+> **Status:** v1 has shipped. This document is preserved as the original implementation spec (pre-code). For the current architecture, file layout, and request flows, see [`ARCHITECTURE.md`](./ARCHITECTURE.md). For the algorithm and setup steps, see [`README.md`](./README.md).
+>
+> ### What has shipped beyond the original v1 plan
+>
+> - **Watchlist** (`/watchlist`) — a user-curated list of arbitrary US equities, scored by the same engine as the scanner. Failing setups stay visible with their composite score halved. Backed by `public.user_watchlist` (migration `0006_user_watchlist.sql`) and a new `/api/symbols/search` endpoint that autocompletes against Alpaca's `/v2/assets` feed.
+> - **Settings expanded** — the live form exposes TP %, SL %, RSI low / high, MA short / long, scanner Top-N, **and** an auto-refresh interval. The original plan called for only `limit` + the RSI band in v1.
+> - **Index toggles** — Scanner rows are tagged with their index memberships (`sp500`, `nasdaq100`), and the UI lets the user toggle either index off (`IndexToggle` in `ScannerView.tsx`).
+> - **Embedded chart** — `StockTargetChart` (Recharts `AreaChart` with TP / SL / current-price reference lines and a 30d / 3mo range toggle) is shown inside the `SetupAuditModal` for both scanner and watchlist rows, and inline as an expandable row in the Portfolio view. The chart bars (last 90 closes) ship with every `ScanResult` from `/api/scan` so there is no client-side Alpaca call.
+> - **Per-request freshness** — `/api/scan` accepts `maxAgeSeconds` so the client can request a fresher result than the in-process cache currently holds (subject to a 1-hour upper bound). The default is 5 minutes.
+> - **Risk levels are live** — `/api/scan?risk=low|med|high` widens or narrows the RSI band as the original plan described; it isn't exposed in the Settings UI yet, but the route honors it.
+> - **Indicators ship a `meanLast` helper** — `lib/indicators.ts` exports the SMA, the Wilder RSI(14), and `meanLast(values, n)` used by the volume-injection score.
+>
+> Items the original plan covered that did **not** ship as described:
+>
+> - The Portfolio "progress bar" `[|||||..]` mock-up was replaced with the embedded chart described above.
+> - Settings persists more fields than originally scoped; the table DDL is in `0002_user_settings.sql` and `0005_user_settings_refresh_interval.sql`.
+
+---
+
 ## Context
 
 We are building **TrendScan**, a hosted momentum scanner + manual portfolio tracker for a small group of users (family/friends) doing 1–5 day swing trades on the NYSE. The starting state is a fresh, empty git repo at `/Users/santiago.vasco/codebase/TrendScan` — no code yet.

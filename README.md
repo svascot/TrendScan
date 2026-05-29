@@ -8,6 +8,7 @@ A lightweight, hosted momentum scanner + manual portfolio tracker built for a sm
 
 - Scans a curated universe of ~600 large-cap US equities + premium ETFs (S&P 500, Nasdaq 100, SPY/QQQ/SCHD/JEPQ, sector SPDRs) against four hard rules every visit.
 - Ranks the survivors with a transparent 3-factor composite score.
+- Lets each user maintain a personal **watchlist** of arbitrary US equities — autocompleted from Alpaca's tradable-asset feed — and runs the same scoring engine against it. Failing setups stay visible with their score halved so you can watch them recover.
 - Lets each user manually track open trades against personalised TP/SL targets and archive closed ones with a running win rate.
 - Stays on permanent free tiers across Vercel + Supabase + Alpaca.
 
@@ -316,34 +317,40 @@ Keep the footer line `Quantitative Momentum Engine Core v1.0 - santiagovasco.com
 
 ```
 app/
-├── (marketing)/        # Public landing — URL: /
-├── (dashboard)/        # Authed app — URLs: /scanner, /portfolio, /settings
-├── login/              # Sign-in + sign-up
-├── api/scan/           # Serverless scanner endpoint
+├── (marketing)/             # Public landing — URL: /
+├── (dashboard)/             # Authed app — URLs: /scanner, /watchlist, /portfolio, /settings
+├── login/                   # Sign-in + sign-up
+├── api/
+│   ├── scan/                # Serverless scan endpoint (scanner + watchlist modes)
+│   └── symbols/search/      # Ticker / company-name autocomplete
 └── layout.tsx
 lib/
-├── indicators.ts       # SMA + Wilder RSI(14)
-├── strategy.ts         # Defaults, zod schema, TP/SL helpers, row mappers
-├── scanner.ts          # Rule eval + multi-factor scoring
-├── alpaca.ts           # Batched bars fetcher
-├── universe.ts         # Deduped universe loader
-├── universe.json       # S&P 500 + Nasdaq 100 + premium ETFs
-├── format.ts           # eToro link, name/initials, formatters
+├── indicators.ts            # SMA + Wilder RSI(14)
+├── strategy.ts              # Defaults, zod schema, TP/SL helpers, row mappers
+├── scanner.ts               # Rule eval + multi-factor scoring (scanner + watchlist)
+├── alpaca.ts                # Batched bars fetcher + active-equities fetcher
+├── universe.ts              # Deduped universe loader
+├── universe.json            # S&P 500 + Nasdaq 100 + premium ETFs
+├── format.ts                # eToro link, name/initials, formatters
 ├── supabase/{server,client,middleware}.ts
 └── db/{settings,trades}.ts
-middleware.ts           # Route guard
-supabase/migrations/    # SQL DDL
+middleware.ts                # Route guard
+supabase/migrations/         # SQL DDL
 ```
 
 ## API
 
-`GET /api/scan?limit=10&exclude=AAPL,TSLA&risk=med` — runs the scan, returns ranked results.
+### `GET /api/scan`
 
-| Param     | Type                 | Default |
-| --------- | -------------------- | ------- |
-| `limit`   | int (1–100)          | 10      |
-| `exclude` | CSV of tickers       | none    |
-| `risk`    | `low` \| `med` \| `high` | `med`   |
+Runs the scan or returns the user's watchlist scored. Returns ranked results.
+
+| Param            | Type                       | Default | Notes |
+| ---------------- | -------------------------- | ------- | ----- |
+| `mode`           | `scanner` \| `watchlist`   | `scanner` | Watchlist mode requires authentication and reads from `public.user_watchlist`. |
+| `limit`          | int (1–100)                | 10      | Applied only in scanner mode. Watchlist mode returns every row the user added. |
+| `exclude`        | CSV of tickers             | none    | Scanner mode only. |
+| `risk`           | `low` \| `med` \| `high`   | `med`   | Widens / narrows the RSI band and clamps. |
+| `maxAgeSeconds`  | int                        | 300     | Per-request freshness ceiling; clamped to ≤ 3600 (the in-process TTL upper bound). |
 
 Response (truncated):
 
@@ -355,12 +362,34 @@ Response (truncated):
   "risk": "med",
   "skipped": 432,
   "results": [
-    { "ticker": "NVDA", "close": 124.5, "score": 94.2, "tier": "High", "ma50": 112.4, "ma200": 98.2, "rsi14": 58.6, "volume": 42000000, "avgVolume20": 26000000, "breakdown": { ... } }
+    { "ticker": "NVDA", "close": 124.5, "score": 94.2, "tier": "High", "ma50": 112.4, "ma200": 98.2, "rsi14": 58.6, "volume": 42000000, "avgVolume20": 26000000, "indices": ["sp500", "nasdaq100"], "chartBars": [{ "date": "2026-01-12", "close": 121.4 }, "..."], "breakdown": { ... } }
   ]
 }
 ```
 
-Results are cached per `(risk, exclude)` for 1 hour to avoid pummeling the Alpaca free tier on reloads.
+In watchlist mode, rows whose four hard rules don't all pass come back with their composite score **halved** (and `tier` recomputed) instead of being filtered out — so the client can render a "No Setup · Trend Filter Failed" badge while keeping the row visible.
+
+Results are cached in process:
+- Scanner: keyed by `(risk, exclude)`.
+- Watchlist: keyed by `(userId, risk, sortedSymbols)` — so editing your personal list invalidates only your entry, never another user's, and never the global scanner cache.
+
+Cache survives between requests on the same serverless instance but not across cold starts.
+
+### `GET /api/symbols/search?q=...`
+
+Authentication required. Backs the watchlist's add-symbol input. Hits Alpaca's `/v2/assets` endpoint, filters to active + tradable US equities, and returns up to 8 ranked matches.
+
+Ranking: exact symbol → symbol prefix → name prefix → name contains.
+
+Response:
+
+```json
+{
+  "results": [
+    { "symbol": "AAPL", "name": "Apple Inc Common Stock", "exchange": "NASDAQ" }
+  ]
+}
+```
 
 ## Deploy to Vercel
 

@@ -6,10 +6,11 @@ A breakdown of what TrendScan is, how the codebase is organised, and how request
 
 ## 1. What it is
 
-TrendScan is a **single-tenant-per-user momentum scanner with a manual trade tracker**, hosted on free tiers (Vercel + Supabase + Alpaca). It does two things for each authenticated user:
+TrendScan is a **single-tenant-per-user momentum scanner with a manual trade tracker**, hosted on free tiers (Vercel + Supabase + Alpaca). It does three things for each authenticated user:
 
-1. **Scans** a curated universe of ~520 US large-caps + premium ETFs every visit, applies four hard technical filters, then ranks survivors with a 3-factor composite score (velocity 50 / RSI sweet-spot 30 / volume injection 20). New: results are tagged with their index memberships (`sp500`, `nasdaq100`), and the UI lets the user toggle either index off.
-2. **Tracks** a personal portfolio of trades the user "adds" from the scanner — entry, TP, SL targets are snapshotted at click time so later strategy changes never retroactively shift open trades.
+1. **Scans** a curated universe of ~520 US large-caps + premium ETFs every visit, applies four hard technical filters, then ranks survivors with a 3-factor composite score (velocity 50 / RSI sweet-spot 30 / volume injection 20). Results are tagged with their index memberships (`sp500`, `nasdaq100`), and the UI lets the user toggle either index off.
+2. **Watchlist** — the user adds arbitrary US equities by ticker or company name (autocomplete is backed by Alpaca's `/v2/assets` feed via `/api/symbols/search`). The same scoring engine runs against just that personal list. Unlike the scanner, watchlist mode never gates on rule failures — when any of the four trend rules fails, the composite score is **halved** so the row sinks in the ranking but stays visible, and a "No Setup · Trend Filter Failed" badge is shown next to the ticker.
+3. **Tracks** a personal portfolio of trades the user "adds" from the scanner — entry, TP, SL targets are snapshotted at click time so later strategy changes never retroactively shift open trades.
 
 It is **informational only** — no order routing, no broker integration. The "+ Add" button writes a row to Supabase; that is the entirety of the trade lifecycle.
 
@@ -49,6 +50,9 @@ app/
 │   │   ├── page.tsx              # Server wrapper → fetches user + settings
 │   │   ├── ScannerView.tsx       # Client UI: filters, toggles, table, polling
 │   │   └── SetupAuditModal.tsx   # Per-row breakdown modal (embeds chart)
+│   ├── watchlist/
+│   │   ├── page.tsx              # Server wrapper → fetches user + settings
+│   │   └── WatchlistView.tsx     # Client UI: autocomplete add, table, remove, polling
 │   ├── portfolio/
 │   │   ├── page.tsx              # Server wrapper → lists trades + fetches Alpaca bars for open
 │   │   └── PortfolioView.tsx     # Open + closed trades, expandable rows w/ chart, win-rate
@@ -57,13 +61,15 @@ app/
 │       └── SettingsView.tsx      # Form + Zod validation
 ├── login/page.tsx                # Sign-in / sign-up
 ├── auth/callback/route.ts        # OAuth/email-link → session exchange
-└── api/scan/route.ts             # Serverless scanner endpoint (the heavy lift)
+└── api/
+    ├── scan/route.ts             # Serverless scan endpoint (scanner + watchlist modes)
+    └── symbols/search/route.ts   # Ticker / company-name autocomplete (Alpaca /v2/assets)
 
 lib/
 ├── indicators.ts                 # Pure functions: SMA + Wilder RSI(14)
-├── scanner.ts                    # ScanResult type, evaluateTicker, rankResults
+├── scanner.ts                    # ScanResult, evaluateTicker, evaluateTickerForWatchlist, rankResults
 ├── strategy.ts                   # Defaults, Zod schema, row mappers, TP/SL math
-├── alpaca.ts                     # Batched daily-bars fetcher (chunks of 100)
+├── alpaca.ts                     # Batched daily-bars fetcher + active-equities fetcher
 ├── universe.ts                   # Deduped universe, getIndicesFor(ticker)
 ├── universe.json                 # S&P 500 + Nasdaq-100 + ETF tickers
 ├── format.ts                     # Price/pct formatters, eToro links, name helpers
@@ -91,7 +97,7 @@ supabase/migrations/              # SQL DDL (idempotent bootstrap + per-feature 
 │                            Browser (user)                          │
 │  - Marketing page (/)                                              │
 │  - Login (/login)                                                  │
-│  - Dashboard SPA-ish: /scanner /portfolio /settings                │
+│  - Dashboard SPA-ish: /scanner /watchlist /portfolio /settings     │
 └──────────────────────────────┬─────────────────────────────────────┘
                                │ HTTPS
                                ▼
@@ -100,8 +106,8 @@ supabase/migrations/              # SQL DDL (idempotent bootstrap + per-feature 
 │                                                                    │
 │  middleware.ts ──┐  (every request, Edge)                          │
 │                  │  - refreshes Supabase session cookie            │
-│                  │  - redirects /scanner|/portfolio|/settings      │
-│                  │    to /login if no user                         │
+│                  │  - redirects /scanner|/watchlist|/portfolio|    │
+│                  │    /settings to /login if no user               │
 │                  │  - redirects /login to /scanner if user exists  │
 │                  ▼                                                 │
 │  ┌─ Server components (RSC) ────────────────────────────────────┐  │
@@ -111,17 +117,20 @@ supabase/migrations/              # SQL DDL (idempotent bootstrap + per-feature 
 │  └────────────────────┬─────────────────────────────────────────┘  │
 │                       │                                            │
 │  ┌─ Client components (use client) ─────────────────────────────┐  │
-│  │  ScannerView / PortfolioView / SettingsView                  │  │
+│  │  ScannerView / WatchlistView / PortfolioView / SettingsView  │  │
 │  │  - useState / useEffect for local UI state                   │  │
-│  │  - fetch('/api/scan?...') for scan data                      │  │
-│  │  - direct Supabase client for trade writes / settings saves  │  │
+│  │  - fetch('/api/scan?...') for scan + watchlist data          │  │
+│  │  - fetch('/api/symbols/search?q=...') for ticker autocomplete│  │
+│  │  - direct Supabase client for trade / watchlist / settings   │  │
 │  │  - StockTargetChart renders Recharts in modals / expansions  │  │
 │  └────────────────────┬─────────────────────────────────────────┘  │
 │                       │                                            │
 │  ┌─ Route handlers (Node runtime) ──────────────────────────────┐  │
-│  │  /api/scan      → universe → Alpaca bars → score → JSON      │  │
-│  │                   (response includes chartBars per result)   │  │
-│  │  /auth/callback → exchanges code for session, redirects      │  │
+│  │  /api/scan?mode=scanner   → universe → bars → score → JSON   │  │
+│  │  /api/scan?mode=watchlist → user_watchlist tickers → score   │  │
+│  │                             (failing rows get score / 2)     │  │
+│  │  /api/symbols/search      → Alpaca /v2/assets → suggestions  │  │
+│  │  /auth/callback           → exchanges code for session       │  │
 │  └──────────────┬───────────────────────────┬───────────────────┘  │
 └─────────────────┼───────────────────────────┼──────────────────────┘
                   │                           │
@@ -129,9 +138,11 @@ supabase/migrations/              # SQL DDL (idempotent bootstrap + per-feature 
 ┌────────────────────────────┐   ┌────────────────────────────────────┐
 │   Alpaca Markets           │   │   Supabase (Postgres + Auth)        │
 │   /v2/stocks/bars          │   │   - auth.users (managed)            │
-│   - daily bars, IEX feed   │   │   - public.user_trades  (RLS)       │
-│   - server-side only       │   │   - public.user_settings (RLS)      │
-│   - ~520 syms / scan       │   │   RLS = `auth.uid() = user_id`      │
+│   - daily bars, IEX feed   │   │   - public.user_trades    (RLS)     │
+│   /v2/assets               │   │   - public.user_watchlist (RLS)     │
+│   - active US equities     │   │   - public.user_settings  (RLS)     │
+│   - server-side only       │   │   RLS = `auth.uid() = user_id`      │
+│   - ~520 syms / scan       │   │                                     │
 │   - N syms / portfolio RSC │   │                                     │
 │   - batches of 100         │   │                                     │
 └────────────────────────────┘   └────────────────────────────────────┘
@@ -197,6 +208,47 @@ User → /scanner
                        JSON to client → table renders;
                        clicking Info opens SetupAuditModal which
                        feeds row.chartBars into <StockTargetChart />
+```
+
+### Watchlist flow — same scoring engine, different gate
+
+```
+User → /watchlist
+  │
+  ▼
+1. Same middleware + dashboard layout gates as Scanner.
+2. /watchlist/page.tsx (RSC):
+   - getOrCreateSettings(supabase, user.id) → same settings row as scanner
+   - <WatchlistView settings={...} />
+3. WatchlistView (client):
+   a. On mount + every settings.refreshIntervalMinutes:
+      fetch('/api/scan?mode=watchlist&maxAgeSeconds=...')
+   b. Route handler with mode=watchlist:
+      - Reads `user_watchlist` rows for the authenticated user
+      - Cache key = `watchlist|<userId>|<risk>|<sorted-symbols>` so
+        edits to the personal list invalidate independently from
+        the global scanner cache
+      - Calls fetchDailyBars(userSymbols) for just that list
+      - For each ticker: evaluateTickerForWatchlist(bars, rule)
+          · all 4 rules pass → ScanResult unchanged
+          · any rule fails  → score is halved, tier recomputed,
+                              row still returned (NOT filtered out)
+      - rankResults → JSON
+   c. Add-symbol UX:
+      - Debounced input (200 ms) → fetch('/api/symbols/search?q=...')
+      - The handler hits Alpaca /v2/assets, filters to ACTIVE +
+        TRADABLE + asset_class=us_equity, then ranks matches as
+        exact > symbol-prefix > name-prefix > name-contains
+      - Selecting a suggestion (or pressing Enter on an exact match)
+        inserts into `public.user_watchlist` via the browser
+        Supabase client; RLS enforces auth.uid() = user_id
+      - Duplicate-key (23505) is silently swallowed; other errors
+        surface in a red banner
+   d. Remove button → optimistic delete from local state, then
+      Supabase DELETE; rolled back on error.
+   e. Each row shows "Setup Active" (all 4 rules pass) or
+      "No Setup · Trend Filter Failed" (any rule fails, score halved).
+   f. Info button opens the same SetupAuditModal used by the scanner.
 ```
 
 ### Portfolio flow — server-side bars for chart expansions
@@ -284,7 +336,7 @@ All three use the same `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_K
 
 ## 7. Data model
 
-Two tables, both keyed by `user_id` and both fully RLS-locked to the owning user. The full DDL is in `supabase/migrations/bootstrap.sql`.
+Three tables, all keyed by `user_id` and fully RLS-locked to the owning user. The full DDL is in `supabase/migrations/bootstrap.sql`.
 
 ### `public.user_trades`
 
@@ -303,6 +355,21 @@ Two tables, both keyed by `user_id` and both fully RLS-locked to the owning user
 
 Indexes: `(user_id, status)` and `(user_id, created_at desc)`.
 
+### `public.user_watchlist`
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | `gen_random_uuid()` |
+| `user_id` | uuid | FK → `auth.users` ON DELETE CASCADE |
+| `ticker` | varchar(12) | Stored as the user provided; the API uppercases on read |
+| `created_at` | timestamptz | default `now()` |
+
+Unique constraint: `(user_id, ticker)` — adding the same symbol twice is a no-op (the API treats Postgres error `23505` as success).
+
+Indexes: `(user_id, created_at desc)` for the watchlist listing query.
+
+Migration: `0006_user_watchlist.sql`.
+
 ### `public.user_settings`
 
 One row per user. Schema mirrors `StrategySettings` in `lib/strategy.ts`:
@@ -320,7 +387,7 @@ One row per user. Schema mirrors `StrategySettings` in `lib/strategy.ts`:
 
 ### RLS
 
-Same shape on both tables — `auth.uid() = user_id` on `select`, `insert`, `update`, `delete`. No service-role bypasses anywhere in the app.
+Same shape on every table — `auth.uid() = user_id` on `select`, `insert`, `update`, `delete` (watchlist exposes only select/insert/delete; rows aren't mutated in place). No service-role bypasses anywhere in the app.
 
 ---
 
@@ -365,9 +432,11 @@ Key invariants:
 
 - `indicators.ts` is pure and side-effect-free.
 - `evaluateTicker` returns `null` if any of the four hard rules fails or if there isn't enough bar history (`maLong + 1` bars minimum).
-- `ScanResult.indices` is always populated; an empty array means the ticker is ETF-only (no index membership). The client's toggle filter then naturally hides it whenever no index toggle covers it.
-- `ScanResult.chartBars` is always populated with the last 90 daily closes (or all available if fewer). This is the single source of truth for the chart embedded in the Scanner modal — no client-side Alpaca fetch.
-- The in-process cache is a `Map<cacheKey, { at, payload }>`. It survives between requests **on the same serverless instance** but does *not* survive cold starts. That's a feature, not a bug — Alpaca data is stale-tolerant for an hour but should be refreshed on every redeploy.
+- `evaluateTickerForWatchlist` shares the same `computeScan` core but **never gates on rule failure**. When any rule fails, the composite score is halved and the tier is recomputed against the halved value (so a 88 → 44 drops from High to Low). It still returns `null` if the ticker doesn't have enough history to score at all.
+- `ScanResult.indices` is always populated; an empty array means the ticker is ETF-only (no index membership). The Scanner client's toggle filter then naturally hides it whenever no index toggle covers it. The Watchlist UI ignores this field — users can add anything tradable.
+- `ScanResult.chartBars` is always populated with the last 90 daily closes (or all available if fewer). This is the single source of truth for the chart embedded in the Scanner / Watchlist modals — no client-side Alpaca fetch.
+- The in-process cache is a `Map<cacheKey, { at, payload }>`. Scanner keys are `scanner|<risk>|<exclude>`; watchlist keys are `watchlist|<userId>|<risk>|<sortedSymbols>`. It survives between requests **on the same serverless instance** but does *not* survive cold starts. That's a feature, not a bug — Alpaca data is stale-tolerant for an hour but should be refreshed on every redeploy.
+- The watchlist `addSymbol` flow trusts `/api/symbols/search` to validate that the symbol is a live, tradable US equity. The server route requires authentication; the Alpaca `/v2/assets` list is fetched once per cold start and held in module memory.
 
 ---
 
@@ -395,6 +464,7 @@ DashboardShell (lib component, client-side)
 ├── <aside> — vertical nav on lg, horizontal scroll on mobile
 │   ├── TrendScan wordmark
 │   ├── Scanner    /scanner   (◎)
+│   ├── Watchlist  /watchlist (★)
 │   ├── Portfolio  /portfolio (▣)
 │   ├── Settings   /settings  (⚙)
 │   └── Log Out
@@ -417,7 +487,7 @@ The marketing surface has its own minimal layout (`app/(marketing)/layout.tsx`) 
 - **Server components fetch DB rows; client components fetch the scan API.** This split keeps Alpaca-bound work off the SSR critical path (the scan would block the first paint for 3–6s otherwise).
 - **No ORM.** `lib/db/*.ts` files are thin wrappers around `supabase.from(...)` with a tiny mapper layer (`settingsFromRow` / `settingsToRow`) to bridge snake_case columns and camelCase TS.
 - **Zod only on writes.** `strategySchema` validates the settings form before save. Reads trust the DB shape because RLS + CHECK constraints already gate it.
-- **One shared visual component.** Every control is a hand-rolled `<button>` / `<select>` / `<input>` with Tailwind. The only reused atoms across pages are the score badge / `IndexToggle` (inline in `ScannerView.tsx`) and **`StockTargetChart`** (`app/(dashboard)/_components/StockTargetChart.tsx`), the only file that touches Recharts.
+- **One shared visual component.** Every control is a hand-rolled `<button>` / `<select>` / `<input>` with Tailwind. The reused atoms across pages are: the score badge (inline in both `ScannerView.tsx` and `WatchlistView.tsx`), the `IndexToggle` (inline in `ScannerView.tsx`), `SetupAuditModal` (in `app/(dashboard)/scanner/` but imported by `WatchlistView.tsx` too), and **`StockTargetChart`** (`app/(dashboard)/_components/StockTargetChart.tsx`), the only file that touches Recharts.
 - **`StockTargetChart` contract.** Pure presentational client component. Props: `ticker`, `currentPrice`, `tpTargetPrice`, `slTargetPrice`, `historicalData: { date, close }[]`. Renders an `AreaChart` with three `ReferenceLine`s (TP emerald-dashed, SL rose-dashed, current price slate-dotted) plus a `ReferenceDot` at the latest close. Has a built-in 30d / 3mo range toggle that slices `historicalData` client-side — the caller always passes the full 90-bar window. Animations are disabled (`isAnimationActive={false}`) for fast renders inside expanding rows / modals.
 - **Type safety for the universe.** `IndexName` is `"sp500" | "nasdaq100"`; `ScanResult.indices: IndexName[]` keeps client filtering exhaustive.
 
@@ -427,13 +497,17 @@ The marketing surface has its own minimal layout (`app/(marketing)/layout.tsx`) 
 
 | You want to… | Edit |
 |---|---|
-| Tune the scoring weights or clamps | `lib/scanner.ts` (`evaluateTicker`) |
+| Tune the scoring weights or clamps | `lib/scanner.ts` (`computeScan`) |
+| Change how watchlist failures are penalised | The `* 0.5` in `evaluateTickerForWatchlist` (`lib/scanner.ts`) |
 | Change the default strategy values | `STRATEGY_DEFAULTS` in `lib/strategy.ts` |
 | Add a new ticker to the scanned universe | `lib/universe.json` |
-| Change the cache TTL | `CACHE_TTL_MS` in `app/api/scan/route.ts` |
+| Change the scanner cache TTL upper bound | `CACHE_TTL_MS` in `app/api/scan/route.ts` |
+| Change the default client-side max-age | `DEFAULT_MAX_AGE_MS` in `app/api/scan/route.ts` |
 | Change how many chart bars the API ships | `CHART_BARS_LOOKBACK` in `lib/scanner.ts` (and `app/(dashboard)/portfolio/page.tsx` for the portfolio fetch) |
 | Add a new chart range option (e.g. 6mo) | `RANGE_BARS` map + the toggle group in `StockTargetChart.tsx`; bump server lookback if longer than 90 |
 | Restyle the chart (colors, gradient, axes) | `StockTargetChart.tsx` — Recharts is contained to this one file |
+| Change autocomplete result count | `MAX_RESULTS` in `app/api/symbols/search/route.ts` |
+| Change watchlist autocomplete ranking | `app/api/symbols/search/route.ts` (the exact / symbolPrefix / namePrefix / nameContains buckets) |
 | Add a new protected route | `PROTECTED_PREFIXES` in `lib/supabase/middleware.ts` and a folder under `app/(dashboard)/` |
 | Add a new column to a table | Write a new file under `supabase/migrations/` (do not edit old ones) and update the matching mapper in `lib/db/` |
 | Tweak the navigation | `NAV` array in `app/(dashboard)/_components/DashboardShell.tsx` |
