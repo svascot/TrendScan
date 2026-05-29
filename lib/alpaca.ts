@@ -1,8 +1,18 @@
 import type { DailyBar } from "./scanner";
 
 const DEFAULT_DATA_URL = "https://data.alpaca.markets";
+const DEFAULT_TRADING_URL = "https://api.alpaca.markets";
+const PAPER_TRADING_URL = "https://paper-api.alpaca.markets";
 const CHUNK_SIZE = 100;
 const BARS_LOOKBACK_DAYS = 365; // calendar days; ~250 trading days
+const ASSETS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+export interface AlpacaAsset {
+  symbol: string;
+  name: string;
+  exchange: string;
+  tradable: boolean;
+}
 
 interface AlpacaBarsResponseBar {
   c: number; h: number; l: number; o: number; v: number; t: string;
@@ -19,6 +29,14 @@ function getCreds(): { keyId: string; secret: string; baseUrl: string } | null {
   const secret = process.env.ALPACA_SECRET_KEY;
   if (!keyId || !secret) return null;
   const baseUrl = process.env.ALPACA_DATA_URL ?? DEFAULT_DATA_URL;
+  return { keyId, secret, baseUrl };
+}
+
+function getTradingCreds(): { keyId: string; secret: string; baseUrl: string } | null {
+  const keyId = process.env.ALPACA_API_KEY_ID;
+  const secret = process.env.ALPACA_SECRET_KEY;
+  if (!keyId || !secret) return null;
+  const baseUrl = process.env.ALPACA_TRADING_URL ?? DEFAULT_TRADING_URL;
   return { keyId, secret, baseUrl };
 }
 
@@ -90,6 +108,69 @@ async function fetchOneBatch(
   } while (pageToken);
 
   return out;
+}
+
+let assetsCache: { at: number; assets: AlpacaAsset[] } | null = null;
+
+interface AlpacaAssetResponse {
+  symbol: string;
+  name: string;
+  exchange: string;
+  tradable: boolean;
+  status: string;
+  asset_class: string;
+}
+
+export async function fetchActiveEquities(): Promise<AlpacaAsset[]> {
+  if (assetsCache && Date.now() - assetsCache.at < ASSETS_TTL_MS) {
+    return assetsCache.assets;
+  }
+  const creds = getTradingCreds();
+  if (!creds) {
+    throw new AlpacaConfigError(
+      "Missing ALPACA_API_KEY_ID / ALPACA_SECRET_KEY. Set them in .env.local."
+    );
+  }
+
+  // Paper-trading keys only authenticate against paper-api.alpaca.markets;
+  // live keys only against api.alpaca.markets. Try the configured (or default
+  // live) base URL first, then fall back to paper on 401/403.
+  const candidates = [creds.baseUrl];
+  if (creds.baseUrl !== PAPER_TRADING_URL) candidates.push(PAPER_TRADING_URL);
+
+  let lastError: AlpacaHttpError | null = null;
+  for (const base of candidates) {
+    const url = `${base}/v2/assets?status=active&asset_class=us_equity`;
+    const res = await fetch(url, {
+      headers: {
+        "APCA-API-KEY-ID": creds.keyId,
+        "APCA-API-SECRET-KEY": creds.secret,
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      lastError = new AlpacaHttpError(
+        res.status,
+        `Alpaca ${res.status} from ${base}: ${body.slice(0, 300)}`,
+      );
+      if (res.status === 401 || res.status === 403) continue;
+      throw lastError;
+    }
+    const raw = (await res.json()) as AlpacaAssetResponse[];
+    const assets: AlpacaAsset[] = raw
+      .filter((a) => a.tradable)
+      .map((a) => ({
+        symbol: a.symbol,
+        name: a.name,
+        exchange: a.exchange,
+        tradable: a.tradable,
+      }));
+    assetsCache = { at: Date.now(), assets };
+    return assets;
+  }
+  throw lastError ?? new AlpacaHttpError(500, "Failed to fetch Alpaca assets.");
 }
 
 export async function fetchDailyBars(

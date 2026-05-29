@@ -89,6 +89,43 @@ export function evaluateTicker(
   rule: ScanRule,
   opts?: { velocityClamp?: number; volClamp?: number }
 ): ScanResult | null {
+  const base = computeScan(ticker, bars, rule, opts);
+  if (!base) return null;
+  const { rule1, rule2, rule3, rule4 } = base.breakdown;
+  if (!(rule1 && rule2 && rule3 && rule4)) return null;
+  return base.result;
+}
+
+// Watchlist mode: never gate on rule failure. If any rule fails, halve the
+// composite score so failing setups sink in the ranking while staying visible.
+export function evaluateTickerForWatchlist(
+  ticker: string,
+  bars: readonly DailyBar[],
+  rule: ScanRule,
+  opts?: { velocityClamp?: number; volClamp?: number }
+): ScanResult | null {
+  const base = computeScan(ticker, bars, rule, opts);
+  if (!base) return null;
+  const { rule1, rule2, rule3, rule4 } = base.breakdown;
+  const allPass = rule1 && rule2 && rule3 && rule4;
+  if (allPass) return base.result;
+
+  const halved = round1(base.result.score * 0.5);
+  const tier: ScanResult["tier"] = halved >= 85 ? "High" : halved >= 70 ? "Med" : "Low";
+  return { ...base.result, score: halved, tier };
+}
+
+interface ComputeScanResult {
+  result: ScanResult;
+  breakdown: { rule1: boolean; rule2: boolean; rule3: boolean; rule4: boolean };
+}
+
+function computeScan(
+  ticker: string,
+  bars: readonly DailyBar[],
+  rule: ScanRule,
+  opts?: { velocityClamp?: number; volClamp?: number }
+): ComputeScanResult | null {
   const minBars = rule.maLong + 1;
   if (bars.length < minBars) return null;
 
@@ -109,8 +146,6 @@ export function evaluateTicker(
   const rule2 = close > ma50;
   const rule3 = ma50 > ma200;
   const rule4 = rsi >= rule.rsiLow && rsi <= rule.rsiHigh;
-
-  if (!(rule1 && rule2 && rule3 && rule4)) return null;
 
   const velocityClamp = opts?.velocityClamp ?? VELOCITY_CLAMP_DEFAULT;
   const volClamp = opts?.volClamp ?? VOL_CLAMP_DEFAULT;
@@ -133,28 +168,31 @@ export function evaluateTicker(
   const tier: ScanResult["tier"] = score >= 85 ? "High" : score >= 70 ? "Med" : "Low";
 
   return {
-    ticker,
-    close: round2(close),
-    ma50: round2(ma50),
-    ma200: round2(ma200),
-    rsi14: round2(rsi),
-    volume: todayVol,
-    avgVolume20: Math.round(avgVol20),
-    score,
-    tier,
-    indices: getIndicesFor(ticker),
-    chartBars: lastChartBars(bars),
-    breakdown: {
-      rule1MacroPass: rule1,
-      rule2MomentumPass: rule2,
-      rule3GoldenPass: rule3,
-      rule4RsiPass: rule4,
-      velocityPct: round4(velocityPct),
-      rsiSweetSpot: round2(rsiSweetSpot),
-      volRatio: round2(volRatio),
-      scoreVelocity: round1(scoreVelocity),
-      scoreRsi: round1(scoreRsi),
-      scoreVolume: round1(scoreVolume),
+    breakdown: { rule1, rule2, rule3, rule4 },
+    result: {
+      ticker,
+      close: round2(close),
+      ma50: round2(ma50),
+      ma200: round2(ma200),
+      rsi14: round2(rsi),
+      volume: todayVol,
+      avgVolume20: Math.round(avgVol20),
+      score,
+      tier,
+      indices: getIndicesFor(ticker),
+      chartBars: lastChartBars(bars),
+      breakdown: {
+        rule1MacroPass: rule1,
+        rule2MomentumPass: rule2,
+        rule3GoldenPass: rule3,
+        rule4RsiPass: rule4,
+        velocityPct: round4(velocityPct),
+        rsiSweetSpot: round2(rsiSweetSpot),
+        volRatio: round2(volRatio),
+        scoreVelocity: round1(scoreVelocity),
+        scoreRsi: round1(scoreRsi),
+        scoreVolume: round1(scoreVolume),
+      },
     },
   };
 }

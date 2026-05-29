@@ -12,6 +12,7 @@ interface Props {
 
 const NAV = [
   { href: "/scanner", label: "Scanner", icon: "◎" },
+  { href: "/watchlist", label: "Watchlist", icon: "★" },
   { href: "/portfolio", label: "Portfolio", icon: "▣" },
   { href: "/settings", label: "Settings", icon: "⚙" },
 ] as const;

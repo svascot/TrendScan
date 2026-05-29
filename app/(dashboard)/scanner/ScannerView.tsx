@@ -195,7 +195,13 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
             {loading && !data && (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
-                  Running scanner across ~600 tickers — this can take 5–10 seconds…
+                  <span className="inline-flex items-center gap-3">
+                    <span
+                      aria-hidden
+                      className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400"
+                    />
+                    Running scanner across ~600 tickers — this can take 5–10 seconds…
+                  </span>
                 </td>
               </tr>
             )}

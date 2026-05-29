@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchDailyBars, AlpacaConfigError, AlpacaHttpError } from "@/lib/alpaca";
 import {
   evaluateTicker,
+  evaluateTickerForWatchlist,
   rankResults,
   rulesForRisk,
   type DailyBar,
@@ -10,6 +11,9 @@ import {
 } from "@/lib/scanner";
 import { STRATEGY_DEFAULTS } from "@/lib/strategy";
 import { universeMinus } from "@/lib/universe";
+import { createClient } from "@/lib/supabase/server";
+
+type ScanMode = "scanner" | "watchlist";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -44,6 +48,10 @@ function parseExclude(s: string | null): string[] {
   return s.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
 }
 
+function parseMode(s: string | null): ScanMode {
+  return s === "watchlist" ? "watchlist" : "scanner";
+}
+
 function parseMaxAgeMs(s: string | null): number {
   if (!s) return DEFAULT_MAX_AGE_MS;
   const n = parseInt(s, 10);
@@ -53,19 +61,59 @@ function parseMaxAgeMs(s: string | null): number {
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
+  const mode = parseMode(url.searchParams.get("mode"));
   const limit = parseLimit(url.searchParams.get("limit"));
   const risk = parseRisk(url.searchParams.get("risk"));
   const exclude = parseExclude(url.searchParams.get("exclude"));
   const maxAgeMs = parseMaxAgeMs(url.searchParams.get("maxAgeSeconds"));
 
-  const cacheKey = `${risk}|${exclude.sort().join(",")}`;
+  let symbols: string[];
+  let userId: string | null = null;
+
+  if (mode === "watchlist") {
+    const supabase = createClient();
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
+    }
+    userId = userData.user.id;
+    const { data: rows, error } = await supabase
+      .from("user_watchlist")
+      .select("ticker")
+      .eq("user_id", userId);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    symbols = (rows ?? []).map((r) => r.ticker.toUpperCase());
+  } else {
+    symbols = universeMinus(exclude);
+  }
+
+  const cacheKey =
+    mode === "watchlist"
+      ? `watchlist|${userId}|${risk}|${[...symbols].sort().join(",")}`
+      : `scanner|${risk}|${exclude.sort().join(",")}`;
   const cached = cache.get(cacheKey);
   if (cached && Date.now() - cached.at < maxAgeMs) {
-    return NextResponse.json(sliceTop(cached.payload, limit));
+    return NextResponse.json(
+      mode === "watchlist" ? cached.payload : sliceTop(cached.payload, limit),
+    );
   }
 
   const rule = rulesForRisk(risk);
-  const symbols = universeMinus(exclude);
+
+  if (symbols.length === 0) {
+    const payload: ScanResponse = {
+      generatedAt: new Date().toISOString(),
+      count: 0,
+      rule,
+      risk,
+      results: [],
+      skipped: 0,
+    };
+    cache.set(cacheKey, { at: Date.now(), payload });
+    return NextResponse.json(payload);
+  }
 
   let bars: Record<string, DailyBar[]>;
   try {
@@ -88,7 +136,10 @@ export async function GET(req: Request) {
       skipped++;
       continue;
     }
-    const result = evaluateTicker(ticker, series, rule);
+    const result =
+      mode === "watchlist"
+        ? evaluateTickerForWatchlist(ticker, series, rule)
+        : evaluateTicker(ticker, series, rule);
     if (result) passed.push(result);
     else skipped++;
   }
@@ -104,7 +155,7 @@ export async function GET(req: Request) {
   };
 
   cache.set(cacheKey, { at: Date.now(), payload });
-  return NextResponse.json(sliceTop(payload, limit));
+  return NextResponse.json(mode === "watchlist" ? payload : sliceTop(payload, limit));
 }
 
 function sliceTop(p: ScanResponse, limit: number): ScanResponse {
