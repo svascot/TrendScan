@@ -22,6 +22,18 @@ export function DashboardShell({ email, children }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [reloading, setReloading] = useState(false);
+
+  async function hardReload() {
+    if (reloading) return;
+    setReloading(true);
+    try {
+      await fetch("/api/scan/bust", { method: "POST", cache: "no-store" });
+    } catch {
+      // ignore — still proceed with reload
+    }
+    window.location.reload();
+  }
 
   useEffect(() => {
     setDrawerOpen(false);
@@ -169,6 +181,31 @@ export function DashboardShell({ email, children }: Props) {
             </h1>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={hardReload}
+              disabled={reloading}
+              aria-label="Hard reload (bypass cache)"
+              title="Hard reload (bypass cache)"
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-800 text-slate-300 transition hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-60"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`h-4 w-4 ${reloading ? "animate-spin" : ""}`}
+                aria-hidden
+              >
+                <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
+                <path d="M3 21v-5h5" />
+              </svg>
+            </button>
             <span className="hidden text-sm text-slate-300 sm:inline">{firstName}</span>
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/20 font-mono text-sm font-semibold text-emerald-300 ring-1 ring-emerald-500/40">
               {initials}

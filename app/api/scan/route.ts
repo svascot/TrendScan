@@ -12,6 +12,7 @@ import {
 import { STRATEGY_DEFAULTS } from "@/lib/strategy";
 import { universeMinus } from "@/lib/universe";
 import { createClient } from "@/lib/supabase/server";
+import { scanCache, type ScanResponse } from "@/lib/scan-cache";
 
 type ScanMode = "scanner" | "watchlist";
 
@@ -20,17 +21,6 @@ export const dynamic = "force-dynamic";
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour upper bound (client can request shorter)
 const DEFAULT_MAX_AGE_MS = 5 * 60 * 1000; // 5 minutes when client doesn't specify
-type CacheEntry = { at: number; payload: ScanResponse };
-const cache = new Map<string, CacheEntry>();
-
-interface ScanResponse {
-  generatedAt: string;
-  count: number;
-  rule: { rsiLow: number; rsiHigh: number; maShort: number; maLong: number };
-  risk: RiskLevel;
-  results: ScanResult[];
-  skipped: number;
-}
 
 function parseRisk(s: string | null): RiskLevel {
   if (s === "low" || s === "med" || s === "high") return s;
@@ -93,7 +83,7 @@ export async function GET(req: Request) {
     mode === "watchlist"
       ? `watchlist|${userId}|${risk}|${[...symbols].sort().join(",")}`
       : `scanner|${risk}|${exclude.sort().join(",")}`;
-  const cached = cache.get(cacheKey);
+  const cached = scanCache.get(cacheKey);
   if (cached && Date.now() - cached.at < maxAgeMs) {
     return NextResponse.json(
       mode === "watchlist" ? cached.payload : sliceTop(cached.payload, limit),
@@ -111,7 +101,7 @@ export async function GET(req: Request) {
       results: [],
       skipped: 0,
     };
-    cache.set(cacheKey, { at: Date.now(), payload });
+    scanCache.set(cacheKey, { at: Date.now(), payload });
     return NextResponse.json(payload);
   }
 
@@ -154,7 +144,7 @@ export async function GET(req: Request) {
     skipped,
   };
 
-  cache.set(cacheKey, { at: Date.now(), payload });
+  scanCache.set(cacheKey, { at: Date.now(), payload });
   return NextResponse.json(mode === "watchlist" ? payload : sliceTop(payload, limit));
 }
 
