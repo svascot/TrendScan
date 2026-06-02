@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
@@ -6,9 +7,14 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
       <header className="border-b border-slate-800/80 bg-slate-900/70 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-emerald-500 font-mono text-sm font-bold text-slate-950">
-              T
-            </span>
+            <Image
+              src="/logo.png"
+              alt="TrendScan"
+              width={32}
+              height={32}
+              priority
+              className="h-8 w-8 rounded-md"
+            />
             <span className="font-mono text-lg font-semibold tracking-tight text-slate-100">
               TrendScan
             </span>

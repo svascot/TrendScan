@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { firstNameFromEmail, initialsFromEmail } from "@/lib/format";
@@ -88,9 +89,14 @@ export function DashboardShell({ email, children }: Props) {
       {/* Desktop sidebar */}
       <aside className="hidden border-slate-800 bg-slate-950/40 lg:flex lg:w-64 lg:shrink-0 lg:flex-col lg:border-r">
         <div className="flex items-center gap-3 px-6 py-5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-500 font-mono text-sm font-bold text-slate-950">
-            T
-          </span>
+          <Image
+            src="/logo.png"
+            alt="TrendScan"
+            width={36}
+            height={36}
+            priority
+            className="h-9 w-9 rounded-md"
+          />
           <span className="font-mono text-lg font-semibold tracking-tight text-slate-100">
             TrendScan
           </span>
@@ -114,9 +120,13 @@ export function DashboardShell({ email, children }: Props) {
       >
         <div className="flex items-center justify-between px-5 py-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-500 font-mono text-sm font-bold text-slate-950">
-              T
-            </span>
+            <Image
+              src="/logo.png"
+              alt="TrendScan"
+              width={36}
+              height={36}
+              className="h-9 w-9 rounded-md"
+            />
             <span className="font-mono text-lg font-semibold tracking-tight text-slate-100">
               TrendScan
             </span>
