@@ -95,7 +95,7 @@ export function DashboardShell({ email, children }: Props) {
             width={36}
             height={36}
             priority
-            className="h-9 w-9 rounded-md"
+            className="h-9 w-9 rounded-lg"
           />
           <span className="font-mono text-lg font-semibold tracking-tight text-slate-100">
             TrendScan
@@ -125,7 +125,7 @@ export function DashboardShell({ email, children }: Props) {
               alt="TrendScan"
               width={36}
               height={36}
-              className="h-9 w-9 rounded-md"
+              className="h-9 w-9 rounded-lg"
             />
             <span className="font-mono text-lg font-semibold tracking-tight text-slate-100">
               TrendScan

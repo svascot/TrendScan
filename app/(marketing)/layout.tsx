@@ -13,7 +13,7 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
               width={32}
               height={32}
               priority
-              className="h-8 w-8 rounded-md"
+              className="h-8 w-8 rounded-lg"
             />
             <span className="font-mono text-lg font-semibold tracking-tight text-slate-100">
               TrendScan
