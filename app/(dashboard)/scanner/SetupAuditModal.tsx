@@ -25,6 +25,7 @@ export function SetupAuditModal({ row, settings, onClose }: Props) {
   const pct = (n: number) => `${(n * 100).toFixed(2)}%`;
   const volMillions = (n: number) => `${(n / 1_000_000).toFixed(1)}M`;
   const { targetTp, targetSl } = computeTpSl(row.close, settings);
+  const atrMinPct = (settings.atrMinPct * 100).toFixed(2);
 
   return (
     <div
@@ -55,9 +56,11 @@ export function SetupAuditModal({ row, settings, onClose }: Props) {
           <section>
             <h3 className="font-mono text-xs uppercase tracking-widest text-slate-400">Summary</h3>
             <p className="mt-2 leading-relaxed text-slate-200">
-              {row.ticker} is showing clear long-term structural health with accelerating immediate
-              momentum. Volume confirms the move at {b.volRatio.toFixed(2)}× the 20-day average,
-              while RSI of {row.rsi14.toFixed(1)} indicates remaining runway before saturation.
+              {row.ticker} is showing structural health with accelerating short-term momentum:
+              ROC(9) of {row.rocValue.toFixed(2)}% and an ATR daily range of{" "}
+              {row.atrPercentage.toFixed(2)}% provide the runway to reach the TP target inside the
+              5-day window. Volume confirms at {b.volRatio.toFixed(2)}× the 20-day average, while
+              RSI of {row.rsi14.toFixed(1)} keeps the setup clear of overbought territory.
             </p>
           </section>
 
@@ -76,7 +79,7 @@ export function SetupAuditModal({ row, settings, onClose }: Props) {
 
           <section>
             <h3 className="font-mono text-xs uppercase tracking-widest text-slate-400">
-              1. Baseline Trend Pass/Fail
+              1. Gatekeeper Pass/Fail
             </h3>
             <ul className="mt-3 space-y-1.5 font-mono text-xs">
               <RuleRow
@@ -103,6 +106,18 @@ export function SetupAuditModal({ row, settings, onClose }: Props) {
                 evalText={`RSI(14) = ${row.rsi14.toFixed(2)}`}
                 pass={b.rule4RsiPass}
               />
+              <RuleRow
+                label="Rule 5 — Velocity Floor"
+                expr={`ROC(9) > 0`}
+                evalText={`ROC(9) = ${b.rocValue.toFixed(2)}%`}
+                pass={b.rule5RocPass}
+              />
+              <RuleRow
+                label="Rule 6 — Volatility Floor"
+                expr={`ATR(14)/Close ≥ ${atrMinPct}%`}
+                evalText={`ATR% = ${b.atrPct.toFixed(2)}%`}
+                pass={b.rule6AtrPass}
+              />
             </ul>
           </section>
 
@@ -112,26 +127,40 @@ export function SetupAuditModal({ row, settings, onClose }: Props) {
             </h3>
             <ul className="mt-3 space-y-1.5 font-mono text-xs text-slate-200">
               <li className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 bg-slate-950/40 px-3 py-2">
-                <span className="text-slate-300">Velocity (50%) · (Close − MA50) / MA50</span>
+                <span className="text-slate-300">ROC (30%) · short-term price velocity</span>
+                <span className="flex gap-4">
+                  <span className="text-slate-400">{b.rocValue.toFixed(2)}%</span>
+                  <span className="text-emerald-300">Score: {b.scoreRoc.toFixed(1)}</span>
+                </span>
+              </li>
+              <li className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 bg-slate-950/40 px-3 py-2">
+                <span className="text-slate-300">Velocity (25%) · (Close − MA{settings.maShort}) / MA{settings.maShort}</span>
                 <span className="flex gap-4">
                   <span className="text-slate-400">{pct(b.velocityPct)}</span>
                   <span className="text-emerald-300">Score: {b.scoreVelocity.toFixed(1)}</span>
                 </span>
               </li>
               <li className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 bg-slate-950/40 px-3 py-2">
-                <span className="text-slate-300">RSI Sweet Spot (30%) · proximity to 60</span>
+                <span className="text-slate-300">ATR (20%) · daily range as % of price</span>
                 <span className="flex gap-4">
-                  <span className="text-slate-400">{(b.rsiSweetSpot * 100).toFixed(1)}%</span>
-                  <span className="text-emerald-300">Score: {b.scoreRsi.toFixed(1)}</span>
+                  <span className="text-slate-400">{b.atrPct.toFixed(2)}%</span>
+                  <span className="text-emerald-300">Score: {b.scoreAtr.toFixed(1)}</span>
                 </span>
               </li>
               <li className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 bg-slate-950/40 px-3 py-2">
                 <span className="text-slate-300">
-                  Volume Injection (20%) · {volMillions(row.volume)} / {volMillions(row.avgVolume20)} avg
+                  Volume (15%) · {volMillions(row.volume)} / {volMillions(row.avgVolume20)} avg
                 </span>
                 <span className="flex gap-4">
                   <span className="text-slate-400">{b.volRatio.toFixed(2)}×</span>
                   <span className="text-emerald-300">Score: {b.scoreVolume.toFixed(1)}</span>
+                </span>
+              </li>
+              <li className="flex flex-wrap items-center justify-between gap-3 rounded border border-slate-800 bg-slate-950/40 px-3 py-2">
+                <span className="text-slate-300">RSI Sweet Spot (10%) · proximity to band center</span>
+                <span className="flex gap-4">
+                  <span className="text-slate-400">{(b.rsiSweetSpot * 100).toFixed(1)}%</span>
+                  <span className="text-emerald-300">Score: {b.scoreRsi.toFixed(1)}</span>
                 </span>
               </li>
             </ul>

@@ -22,6 +22,7 @@ interface FormState {
   maLong: string;
   scannerLimit: string;
   refreshIntervalMinutes: string;
+  atrMinPct: string;
 }
 
 function toForm(s: StrategySettings): FormState {
@@ -34,6 +35,7 @@ function toForm(s: StrategySettings): FormState {
     maLong: s.maLong.toString(),
     scannerLimit: s.scannerLimit.toString(),
     refreshIntervalMinutes: s.refreshIntervalMinutes.toString(),
+    atrMinPct: (s.atrMinPct * 100).toFixed(2),
   };
 }
 
@@ -68,6 +70,7 @@ export function SettingsView({ initial }: Props) {
       maLong: parseInt(form.maLong, 10),
       scannerLimit: parseInt(form.scannerLimit, 10),
       refreshIntervalMinutes: parseInt(form.refreshIntervalMinutes, 10),
+      atrMinPct: parseFloat(form.atrMinPct) / 100,
     });
 
     if (!parsed.success) {
@@ -90,6 +93,7 @@ export function SettingsView({ initial }: Props) {
         ma_long: parsed.data.maLong,
         scanner_limit: parsed.data.scannerLimit,
         refresh_interval_minutes: parsed.data.refreshIntervalMinutes,
+        atr_min_pct: parsed.data.atrMinPct,
       };
       const { error } = await supabase
         .from("user_settings")
@@ -126,6 +130,19 @@ export function SettingsView({ initial }: Props) {
         <Section title="RSI Band" hint="Buy strength, not exhaustion. Default 55–65 keeps you out of overbought territory.">
           <Field label="RSI Low" value={form.rsiLow} onChange={(v) => update("rsiLow", v)} step="1" />
           <Field label="RSI High" value={form.rsiHigh} onChange={(v) => update("rsiHigh", v)} step="1" />
+        </Section>
+
+        <Section
+          title="Volatility Floor (ATR)"
+          hint="Minimum daily range (ATR14 / Close) so the asset can realistically reach TP inside 1–5 days. Default 1.5%."
+        >
+          <Field
+            label="ATR Min %"
+            suffix="%"
+            value={form.atrMinPct}
+            onChange={(v) => update("atrMinPct", v)}
+            step="0.1"
+          />
         </Section>
 
         <Section title="Moving Averages" hint="50 & 200 are the canonical short / long structural anchors.">

@@ -9,6 +9,7 @@ export interface StrategySettings {
   maLong: number;
   scannerLimit: number;
   refreshIntervalMinutes: number;
+  atrMinPct: number; // e.g. 0.015 = 1.5% — min (ATR/close) for the volatility filter
 }
 
 export const STRATEGY_DEFAULTS: StrategySettings = {
@@ -20,6 +21,7 @@ export const STRATEGY_DEFAULTS: StrategySettings = {
   maLong: 200,
   scannerLimit: 10,
   refreshIntervalMinutes: 5,
+  atrMinPct: 0.015,
 };
 
 export const strategySchema = z.object({
@@ -31,6 +33,7 @@ export const strategySchema = z.object({
   maLong: z.number().int().min(50).max(400),
   scannerLimit: z.number().int().min(1).max(100),
   refreshIntervalMinutes: z.number().int().min(1).max(1440),
+  atrMinPct: z.number().min(0).max(0.2),
 }).refine((s) => s.rsiHigh > s.rsiLow, {
   message: "rsiHigh must be greater than rsiLow",
   path: ["rsiHigh"],
@@ -60,6 +63,7 @@ export type DbSettingsRow = {
   ma_long: number;
   scanner_limit: number;
   refresh_interval_minutes: number;
+  atr_min_pct?: number | null;
   updated_at?: string;
 };
 
@@ -77,6 +81,10 @@ export function settingsFromRow(row: DbSettingsRow | null): StrategySettings {
       row.refresh_interval_minutes == null
         ? STRATEGY_DEFAULTS.refreshIntervalMinutes
         : Number(row.refresh_interval_minutes),
+    atrMinPct:
+      row.atr_min_pct == null
+        ? STRATEGY_DEFAULTS.atrMinPct
+        : Number(row.atr_min_pct),
   };
 }
 
@@ -91,5 +99,6 @@ export function settingsToRow(userId: string, s: StrategySettings): DbSettingsRo
     ma_long: s.maLong,
     scanner_limit: s.scannerLimit,
     refresh_interval_minutes: s.refreshIntervalMinutes,
+    atr_min_pct: s.atrMinPct,
   };
 }

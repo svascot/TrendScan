@@ -27,7 +27,9 @@ function isTrendPassing(r: ScanResult): boolean {
     r.breakdown.rule1MacroPass &&
     r.breakdown.rule2MomentumPass &&
     r.breakdown.rule3GoldenPass &&
-    r.breakdown.rule4RsiPass
+    r.breakdown.rule4RsiPass &&
+    r.breakdown.rule5RocPass &&
+    r.breakdown.rule6AtrPass
   );
 }
 
@@ -254,7 +256,7 @@ export function WatchlistView({ settings }: { settings: StrategySettings }) {
           </h1>
           <p className="mt-1 text-sm text-slate-400">
             Add any active US equity by ticker or company name. Stocks that don&apos;t pass
-            the four trend rules stay visible with a halved score.
+            the gatekeeper rules stay visible with a halved score.
           </p>
           {generated && (
             <p className="mt-1 text-xs text-slate-500">
