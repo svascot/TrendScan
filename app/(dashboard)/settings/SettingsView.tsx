@@ -8,6 +8,8 @@ import {
   strategySchema,
   type StrategySettings,
 } from "@/lib/strategy";
+import { SettingHelp } from "@/components/ui/setting-help";
+import type { SettingHelpId } from "@/lib/constants/settings-education";
 
 interface Props {
   initial: StrategySettings;
@@ -122,18 +124,27 @@ export function SettingsView({ initial }: Props) {
       </header>
 
       <form onSubmit={onSubmit} className="space-y-8 rounded-xl border border-slate-800 bg-slate-900/40 p-4 sm:p-6">
-        <Section title="Trade Targets" hint="Symmetric 1:2 risk:reward is the system default. Lower TP = easier to hit, lower per-trade payoff.">
+        <Section
+          title="Trade Targets"
+          helpId="tradeTargets"
+          hint="Symmetric 1:2 risk:reward is the system default. Lower TP = easier to hit, lower per-trade payoff."
+        >
           <Field label="Take Profit %" suffix="%" value={form.tpPct} onChange={(v) => update("tpPct", v)} step="0.1" />
           <Field label="Stop Loss %" suffix="%" value={form.slPct} onChange={(v) => update("slPct", v)} step="0.1" />
         </Section>
 
-        <Section title="RSI Band" hint="Buy strength, not exhaustion. Default 55–65 keeps you out of overbought territory.">
+        <Section
+          title="RSI Band"
+          helpId="rsiBand"
+          hint="Buy strength, not exhaustion. Default 55–65 keeps you out of overbought territory."
+        >
           <Field label="RSI Low" value={form.rsiLow} onChange={(v) => update("rsiLow", v)} step="1" />
           <Field label="RSI High" value={form.rsiHigh} onChange={(v) => update("rsiHigh", v)} step="1" />
         </Section>
 
         <Section
           title="Volatility Floor (ATR)"
+          helpId="volatilityFloor"
           hint="Minimum daily range (ATR14 / Close) so the asset can realistically reach TP inside 1–5 days. Default 1.5%."
         >
           <Field
@@ -145,7 +156,11 @@ export function SettingsView({ initial }: Props) {
           />
         </Section>
 
-        <Section title="Moving Averages" hint="50 & 200 are the canonical short / long structural anchors.">
+        <Section
+          title="Moving Averages"
+          helpId="movingAverages"
+          hint="50 & 200 are the canonical short / long structural anchors."
+        >
           <Field label="MA Short" value={form.maShort} onChange={(v) => update("maShort", v)} step="1" />
           <Field label="MA Long" value={form.maLong} onChange={(v) => update("maLong", v)} step="1" />
         </Section>
@@ -197,11 +212,14 @@ export function SettingsView({ initial }: Props) {
 }
 
 function Section({
-  title, hint, children,
-}: { title: string; hint?: string; children: React.ReactNode }) {
+  title, hint, helpId, children,
+}: { title: string; hint?: string; helpId?: SettingHelpId; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="font-mono text-xs uppercase tracking-widest text-slate-400">{title}</h2>
+      <div className="flex items-center gap-1.5">
+        <h2 className="font-mono text-xs uppercase tracking-widest text-slate-400">{title}</h2>
+        {helpId && <SettingHelp id={helpId} />}
+      </div>
       {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>
     </section>
