@@ -79,3 +79,46 @@ export function roc(closes: readonly number[], period = 9): number | null {
   if (past === 0) return null;
   return ((last - past) / past) * 100;
 }
+
+// Exponential Moving Average seeded with the SMA of the first `period` values.
+// Returns the most recent EMA value, or null if not enough bars.
+export function ema(values: readonly number[], period: number): number | null {
+  if (period <= 0 || values.length < period) return null;
+  const k = 2 / (period + 1);
+  let e = 0;
+  for (let i = 0; i < period; i++) e += values[i];
+  e /= period;
+  for (let i = period; i < values.length; i++) {
+    e = values[i] * k + e * (1 - k);
+  }
+  return e;
+}
+
+// Awesome Oscillator = SMA(median, 5) - SMA(median, 34), where median = (high + low) / 2.
+// Returns the previous and current AO values so the caller can confirm momentum
+// (curr > prev = "green bar" / rising AO). Returns null if not enough bars (needs 35).
+export function awesomeOscillator(
+  highs: readonly number[],
+  lows: readonly number[],
+): { prev: number; curr: number } | null {
+  const n = highs.length;
+  if (n !== lows.length || n < 35) return null;
+
+  // Build median price series.
+  const median = new Array<number>(n);
+  for (let i = 0; i < n; i++) median[i] = (highs[i] + lows[i]) / 2;
+
+  // Rolling sums for SMA(5) and SMA(34) computed in one pass.
+  let sum5 = 0;
+  for (let i = n - 5; i < n; i++) sum5 += median[i];
+  let sum34 = 0;
+  for (let i = n - 34; i < n; i++) sum34 += median[i];
+  const curr = sum5 / 5 - sum34 / 34;
+
+  // Previous bar: shift each window back by 1.
+  const prevSum5 = sum5 - median[n - 1] + median[n - 1 - 5];
+  const prevSum34 = sum34 - median[n - 1] + median[n - 1 - 34];
+  const prev = prevSum5 / 5 - prevSum34 / 34;
+
+  return { prev, curr };
+}

@@ -8,6 +8,7 @@ A lightweight, hosted momentum scanner + manual portfolio tracker built for a sm
 
 - Scans a curated universe of ~600 large-cap US equities + premium ETFs (S&P 500, Nasdaq 100, SPY/QQQ/SCHD/JEPQ, sector SPDRs) against four hard rules every visit.
 - Ranks the survivors with a transparent 3-factor composite score.
+- Runs a second, independent **GMMA scanner** over the same universe — a Guppy Multiple Moving Average fan (EMA 30/35/40/45/50/60) plus an Awesome Oscillator momentum trigger. Each match ships a structural stop loss, a dynamic 1:2 take-profit, and a position size in shares derived from the user's money-management settings (total capital × risk per trade).
 - Lets each user maintain a personal **watchlist** of arbitrary US equities — autocompleted from Alpaca's tradable-asset feed — and runs the same scoring engine against it. Failing setups stay visible with their score halved so you can watch them recover.
 - Lets each user manually track open trades against personalised TP/SL targets and archive closed ones with a running win rate.
 - Stays on permanent free tiers across Vercel + Supabase + Alpaca.
@@ -170,6 +171,62 @@ FUNCTION WILDER_RSI(closes, period = 14):
 - Results are cached in process for **1 hour** per `(risk, exclude)` key. Multiple page loads / users hitting the same URL within an hour don't re-query Alpaca.
 - All indicators are pure functions in `lib/indicators.ts` — they're trivially unit-testable without network or DB.
 
+## GMMA scanner algorithm
+
+A second, independent scanner lives at `/gmma-scanner` (API: `GET /api/scan-gmma`, engine: `lib/gmma-scanner.ts`). Instead of the MA50/MA200 + RSI composite, it looks for tickers riding an ordered **Guppy Multiple Moving Average fan** with confirmed momentum, and replaces fixed-percentage TP/SL with structural levels and money-management position sizing.
+
+### Indicators
+
+Both are pure functions in `lib/indicators.ts`:
+
+**Exponential Moving Average** — seeded with the SMA of the first $n$ values, then smoothed with $k = \frac{2}{n+1}$:
+
+$$\text{EMA}_n(t) = \text{close}_t \cdot k + \text{EMA}_n(t-1) \cdot (1-k)$$
+
+Six EMAs are computed per ticker: periods 30, 35, 40, 45, 50, 60.
+
+**Awesome Oscillator** — momentum of the median price $m = (\text{high} + \text{low}) / 2$:
+
+$$\text{AO}(t) = \text{SMA}_5(m) - \text{SMA}_{34}(m)$$
+
+Both the current and previous bar's AO are returned so the trigger can require a *rising* oscillator.
+
+### The three hard filters
+
+A ticker must pass **all three** (plus have ≥ 60 daily bars of history):
+
+| # | Rule | Intent |
+| --- | --- | --- |
+| 1 | $\text{EMA}_{30} > \text{EMA}_{35} > \text{EMA}_{40} > \text{EMA}_{45} > \text{EMA}_{50} > \text{EMA}_{60}$ | Fan fully ordered — every band of the Guppy ribbon agrees the trend is up. |
+| 2 | $\text{EMA}_{60} \le \text{close} \le \text{EMA}_{30}$ | Price inside the channel — buying the pullback *into* the ribbon, not chasing an extension above it. |
+| 3 | $\text{AO}(t) > \text{AO}(t-1)$ | Momentum turning up — the "green AO bar" confirmation that the pullback is resolving upward. |
+
+### Structural stop loss & dynamic 1:2 take profit
+
+Rather than a flat percentage, the stop is anchored to structure — the **tighter** of two floors:
+
+$$\text{target}_\text{SL} = \max\left(\text{EMA}_{60},\ \min(\text{low}_{t-4} \ldots \text{low}_t)\right)$$
+
+If the stop isn't strictly below the close, the setup is rejected (position sizing would be undefined). The take profit is then placed at twice the risk:
+
+$$\text{risk/share} = \text{close} - \text{target}_\text{SL} \qquad \text{target}_\text{TP} = \text{close} + 2 \cdot \text{risk/share}$$
+
+so every GMMA setup has a 1:2 risk-to-reward ratio **by construction**.
+
+### Ranking & position sizing
+
+Survivors are ranked by **tightest relative risk first** — ascending `riskPerShare / close` — because a tighter stop means more shares fit inside the same risk budget.
+
+Position size is computed client-side from two per-user **Money Management** settings (Settings page, stored in `user_settings`, migration `0008`):
+
+$$\text{shares} = \left\lfloor \frac{\text{totalCapital} \cdot \text{riskPerTradePct} / 100}{\text{risk/share}} \right\rfloor$$
+
+Defaults: `totalCapital = $10,000`, `riskPerTradePct = 1.0%` → a stop-out costs exactly $100. Clicking **+ Add** snapshots the entry, structural SL, and 1:2 TP into `user_trades`, same immutability rule as the classic scanner.
+
+### Caching
+
+Same model as `/api/scan`: in-process cache keyed by `gmma|<exclude>`, 1-hour TTL upper bound, `?maxAgeSeconds=` per-request freshness (default 5 minutes), top-N slicing applied after ranking.
+
 ## Stack
 
 - Next.js 14 (App Router) + TypeScript + Tailwind CSS
@@ -192,9 +249,14 @@ cp .env.local.example .env.local
 #   SUPABASE_SERVICE_ROLE_KEY                (from your Supabase project)
 
 # 3. Apply database migrations.
-# In Supabase dashboard → SQL Editor, run the consolidated bootstrap (idempotent):
+# In Supabase dashboard → SQL Editor, run the consolidated bootstrap (idempotent,
+# covers 0001 → 0004), then the newer per-feature files in order:
 #   supabase/migrations/bootstrap.sql
-# Or paste the individual files in order (0001 → 0002 → 0003 → 0004).
+#   supabase/migrations/0005_user_settings_refresh_interval.sql
+#   supabase/migrations/0006_user_watchlist.sql
+#   supabase/migrations/0007_user_settings_atr_min_pct.sql
+#   supabase/migrations/0008_user_settings_money_mgmt.sql
+# Or paste all the individual files in order (0001 → 0008).
 
 # 4. Configure auth — see "Supabase auth configuration" below.
 
@@ -318,16 +380,18 @@ Keep the footer line `Quantitative Momentum Engine Core v1.0 - santiagovasco.com
 ```
 app/
 ├── (marketing)/             # Public landing — URL: /
-├── (dashboard)/             # Authed app — URLs: /scanner, /watchlist, /portfolio, /settings
+├── (dashboard)/             # Authed app — URLs: /scanner, /gmma-scanner, /watchlist, /portfolio, /settings
 ├── login/                   # Sign-in + sign-up
 ├── api/
 │   ├── scan/                # Serverless scan endpoint (scanner + watchlist modes)
+│   ├── scan-gmma/           # Serverless GMMA scan endpoint
 │   └── symbols/search/      # Ticker / company-name autocomplete
 └── layout.tsx
 lib/
-├── indicators.ts            # SMA + Wilder RSI(14)
+├── indicators.ts            # SMA, Wilder RSI(14), ATR, ROC, EMA, Awesome Oscillator
 ├── strategy.ts              # Defaults, zod schema, TP/SL helpers, row mappers
 ├── scanner.ts               # Rule eval + multi-factor scoring (scanner + watchlist)
+├── gmma-scanner.ts          # GMMA fan + AO eval, structural SL, 1:2 TP, ranking
 ├── alpaca.ts                # Batched bars fetcher + active-equities fetcher
 ├── universe.ts              # Deduped universe loader
 ├── universe.json            # S&P 500 + Nasdaq 100 + premium ETFs
@@ -374,6 +438,39 @@ Results are cached in process:
 - Watchlist: keyed by `(userId, risk, sortedSymbols)` — so editing your personal list invalidates only your entry, never another user's, and never the global scanner cache.
 
 Cache survives between requests on the same serverless instance but not across cold starts.
+
+### `GET /api/scan-gmma`
+
+Runs the GMMA fan + Awesome Oscillator scan against the full universe and returns matches ranked tightest-relative-risk first.
+
+| Param            | Type           | Default | Notes |
+| ---------------- | -------------- | ------- | ----- |
+| `limit`          | int (1–100)    | 10      | Top-N slice applied after ranking. |
+| `exclude`        | CSV of tickers | none    | Removed from the universe before scanning. |
+| `maxAgeSeconds`  | int            | 300     | Per-request freshness ceiling; clamped to ≤ 3600 (the in-process TTL upper bound). |
+
+Response (truncated):
+
+```json
+{
+  "generatedAt": "2026-06-11T20:34:11.000Z",
+  "count": 10,
+  "skipped": 575,
+  "results": [
+    {
+      "ticker": "NVDA", "close": 124.5,
+      "ema30": 123.9, "ema35": 122.7, "ema40": 121.4, "ema45": 120.2, "ema50": 119.1, "ema60": 117.6,
+      "aoPrev": 1.2041, "aoCurr": 1.5530,
+      "targetTp": 138.3, "targetSl": 117.6, "riskPerShare": 6.9, "rrRatio": 2,
+      "indices": ["sp500", "nasdaq100"],
+      "chartBars": [{ "date": "2026-03-12", "close": 121.4 }, "..."],
+      "breakdown": { "rule1FanOrderedPass": true, "rule2PriceInChannelPass": true, "rule3MomentumPass": true, "riskPerSharePositive": true }
+    }
+  ]
+}
+```
+
+Position sizing is **not** in the response — the client computes shares from the user's money-management settings, so two users see different sizes for the same payload (and the cache stays user-agnostic, keyed only by `gmma|<exclude>`).
 
 ### `GET /api/symbols/search?q=...`
 

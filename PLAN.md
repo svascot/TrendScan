@@ -10,7 +10,8 @@
 > - **Embedded chart** — `StockTargetChart` (Recharts `AreaChart` with TP / SL / current-price reference lines and a 30d / 3mo range toggle) is shown inside the `SetupAuditModal` for both scanner and watchlist rows, and inline as an expandable row in the Portfolio view. The chart bars (last 90 closes) ship with every `ScanResult` from `/api/scan` so there is no client-side Alpaca call.
 > - **Per-request freshness** — `/api/scan` accepts `maxAgeSeconds` so the client can request a fresher result than the in-process cache currently holds (subject to a 1-hour upper bound). The default is 5 minutes.
 > - **Risk levels are live** — `/api/scan?risk=low|med|high` widens or narrows the RSI band as the original plan described; it isn't exposed in the Settings UI yet, but the route honors it.
-> - **Indicators ship a `meanLast` helper** — `lib/indicators.ts` exports the SMA, the Wilder RSI(14), and `meanLast(values, n)` used by the volume-injection score.
+> - **Indicators library grew** — `lib/indicators.ts` exports the SMA, the Wilder RSI(14), `meanLast(values, n)` (volume-injection score), ATR and ROC (volatility gatekeeper), plus EMA and the Awesome Oscillator (GMMA scanner).
+> - **GMMA scanner** (`/gmma-scanner`) — a second, independent scanning strategy over the same universe: ordered Guppy EMA fan (30/35/40/45/50/60), price pulled back inside the EMA30–EMA60 channel, and a rising Awesome Oscillator. Setups carry a structural stop (the tighter of EMA60 or the 5-bar swing low) and a dynamic 1:2 take profit, and the UI sizes each position from new per-user **money-management settings** (`total_capital`, `risk_per_trade_pct` — migration `0008_user_settings_money_mgmt.sql`). Served by `/api/scan-gmma` with engine code in `lib/gmma-scanner.ts`.
 >
 > Items the original plan covered that did **not** ship as described:
 >
