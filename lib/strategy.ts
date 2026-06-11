@@ -10,6 +10,8 @@ export interface StrategySettings {
   scannerLimit: number;
   refreshIntervalMinutes: number;
   atrMinPct: number; // e.g. 0.015 = 1.5% — min (ATR/close) for the volatility filter
+  totalCapital: number; // USD, account size used for GMMA position sizing
+  riskPerTradePct: number; // percent, e.g. 1.0 = 1% risked per trade
 }
 
 export const STRATEGY_DEFAULTS: StrategySettings = {
@@ -22,6 +24,8 @@ export const STRATEGY_DEFAULTS: StrategySettings = {
   scannerLimit: 10,
   refreshIntervalMinutes: 5,
   atrMinPct: 0.015,
+  totalCapital: 10000,
+  riskPerTradePct: 1.0,
 };
 
 export const strategySchema = z.object({
@@ -34,6 +38,8 @@ export const strategySchema = z.object({
   scannerLimit: z.number().int().min(1).max(100),
   refreshIntervalMinutes: z.number().int().min(1).max(1440),
   atrMinPct: z.number().min(0).max(0.2),
+  totalCapital: z.number().min(0).max(1_000_000_000),
+  riskPerTradePct: z.number().min(0.1).max(10),
 }).refine((s) => s.rsiHigh > s.rsiLow, {
   message: "rsiHigh must be greater than rsiLow",
   path: ["rsiHigh"],
@@ -64,6 +70,8 @@ export type DbSettingsRow = {
   scanner_limit: number;
   refresh_interval_minutes: number;
   atr_min_pct?: number | null;
+  total_capital?: number | null;
+  risk_per_trade_pct?: number | null;
   updated_at?: string;
 };
 
@@ -85,6 +93,14 @@ export function settingsFromRow(row: DbSettingsRow | null): StrategySettings {
       row.atr_min_pct == null
         ? STRATEGY_DEFAULTS.atrMinPct
         : Number(row.atr_min_pct),
+    totalCapital:
+      row.total_capital == null
+        ? STRATEGY_DEFAULTS.totalCapital
+        : Number(row.total_capital),
+    riskPerTradePct:
+      row.risk_per_trade_pct == null
+        ? STRATEGY_DEFAULTS.riskPerTradePct
+        : Number(row.risk_per_trade_pct),
   };
 }
 
@@ -100,5 +116,7 @@ export function settingsToRow(userId: string, s: StrategySettings): DbSettingsRo
     scanner_limit: s.scannerLimit,
     refresh_interval_minutes: s.refreshIntervalMinutes,
     atr_min_pct: s.atrMinPct,
+    total_capital: s.totalCapital,
+    risk_per_trade_pct: s.riskPerTradePct,
   };
 }

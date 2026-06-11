@@ -6,11 +6,12 @@ A breakdown of what TrendScan is, how the codebase is organised, and how request
 
 ## 1. What it is
 
-TrendScan is a **single-tenant-per-user momentum scanner with a manual trade tracker**, hosted on free tiers (Vercel + Supabase + Alpaca). It does three things for each authenticated user:
+TrendScan is a **single-tenant-per-user momentum scanner with a manual trade tracker**, hosted on free tiers (Vercel + Supabase + Alpaca). It does four things for each authenticated user:
 
 1. **Scans** a curated universe of ~520 US large-caps + premium ETFs every visit, applies four hard technical filters, then ranks survivors with a 3-factor composite score (velocity 50 / RSI sweet-spot 30 / volume injection 20). Results are tagged with their index memberships (`sp500`, `nasdaq100`), and the UI lets the user toggle either index off.
-2. **Watchlist** — the user adds arbitrary US equities by ticker or company name (autocomplete is backed by Alpaca's `/v2/assets` feed via `/api/symbols/search`). The same scoring engine runs against just that personal list. Unlike the scanner, watchlist mode never gates on rule failures — when any of the four trend rules fails, the composite score is **halved** so the row sinks in the ranking but stays visible, and a "No Setup · Trend Filter Failed" badge is shown next to the ticker.
-3. **Tracks** a personal portfolio of trades the user "adds" from the scanner — entry, TP, SL targets are snapshotted at click time so later strategy changes never retroactively shift open trades.
+2. **GMMA scans** the same universe with an independent strategy (`/gmma-scanner` → `/api/scan-gmma` → `lib/gmma-scanner.ts`): an ordered Guppy EMA fan (30/35/40/45/50/60), price pulled back inside the EMA30–EMA60 channel, and a rising Awesome Oscillator. Matches carry a structural stop loss (the tighter of EMA60 or the 5-bar swing low), a 1:2 take profit derived from that stop, and a per-user position size in shares computed client-side from the money-management settings (`total_capital` × `risk_per_trade_pct`).
+3. **Watchlist** — the user adds arbitrary US equities by ticker or company name (autocomplete is backed by Alpaca's `/v2/assets` feed via `/api/symbols/search`). The same scoring engine runs against just that personal list. Unlike the scanner, watchlist mode never gates on rule failures — when any of the four trend rules fails, the composite score is **halved** so the row sinks in the ranking but stays visible, and a "No Setup · Trend Filter Failed" badge is shown next to the ticker.
+4. **Tracks** a personal portfolio of trades the user "adds" from either scanner — entry, TP, SL targets are snapshotted at click time so later strategy changes never retroactively shift open trades.
 
 It is **informational only** — no order routing, no broker integration. The "+ Add" button writes a row to Supabase; that is the entirety of the trade lifecycle.
 
@@ -50,6 +51,9 @@ app/
 │   │   ├── page.tsx              # Server wrapper → fetches user + settings
 │   │   ├── ScannerView.tsx       # Client UI: filters, toggles, table, polling
 │   │   └── SetupAuditModal.tsx   # Per-row breakdown modal (embeds chart)
+│   ├── gmma-scanner/
+│   │   ├── page.tsx              # Server wrapper → fetches user + settings
+│   │   └── GmmaScannerView.tsx   # Client UI: GMMA table, position sizing, polling
 │   ├── watchlist/
 │   │   ├── page.tsx              # Server wrapper → fetches user + settings
 │   │   └── WatchlistView.tsx     # Client UI: autocomplete add, table, remove, polling
@@ -63,11 +67,13 @@ app/
 ├── auth/callback/route.ts        # OAuth/email-link → session exchange
 └── api/
     ├── scan/route.ts             # Serverless scan endpoint (scanner + watchlist modes)
+    ├── scan-gmma/route.ts        # Serverless GMMA scan endpoint
     └── symbols/search/route.ts   # Ticker / company-name autocomplete (Alpaca /v2/assets)
 
 lib/
-├── indicators.ts                 # Pure functions: SMA + Wilder RSI(14)
+├── indicators.ts                 # Pure functions: SMA, Wilder RSI(14), ATR, ROC, EMA, Awesome Oscillator
 ├── scanner.ts                    # ScanResult, evaluateTicker, evaluateTickerForWatchlist, rankResults
+├── gmma-scanner.ts               # GmmaScanResult, evaluateGmmaTicker, rankGmmaResults, GMMA cache
 ├── strategy.ts                   # Defaults, Zod schema, row mappers, TP/SL math
 ├── alpaca.ts                     # Batched daily-bars fetcher + active-equities fetcher
 ├── universe.ts                   # Deduped universe, getIndicesFor(ticker)
@@ -97,7 +103,8 @@ supabase/migrations/              # SQL DDL (idempotent bootstrap + per-feature 
 │                            Browser (user)                          │
 │  - Marketing page (/)                                              │
 │  - Login (/login)                                                  │
-│  - Dashboard SPA-ish: /scanner /watchlist /portfolio /settings     │
+│  - Dashboard SPA-ish: /scanner /gmma-scanner /watchlist            │
+│    /portfolio /settings                                            │
 └──────────────────────────────┬─────────────────────────────────────┘
                                │ HTTPS
                                ▼
@@ -117,7 +124,8 @@ supabase/migrations/              # SQL DDL (idempotent bootstrap + per-feature 
 │  └────────────────────┬─────────────────────────────────────────┘  │
 │                       │                                            │
 │  ┌─ Client components (use client) ─────────────────────────────┐  │
-│  │  ScannerView / WatchlistView / PortfolioView / SettingsView  │  │
+│  │  ScannerView / GmmaScannerView / WatchlistView /             │  │
+│  │  PortfolioView / SettingsView                                │  │
 │  │  - useState / useEffect for local UI state                   │  │
 │  │  - fetch('/api/scan?...') for scan + watchlist data          │  │
 │  │  - fetch('/api/symbols/search?q=...') for ticker autocomplete│  │
@@ -129,6 +137,7 @@ supabase/migrations/              # SQL DDL (idempotent bootstrap + per-feature 
 │  │  /api/scan?mode=scanner   → universe → bars → score → JSON   │  │
 │  │  /api/scan?mode=watchlist → user_watchlist tickers → score   │  │
 │  │                             (failing rows get score / 2)     │  │
+│  │  /api/scan-gmma           → universe → bars → GMMA fan + AO  │  │
 │  │  /api/symbols/search      → Alpaca /v2/assets → suggestions  │  │
 │  │  /auth/callback           → exchanges code for session       │  │
 │  └──────────────┬───────────────────────────┬───────────────────┘  │
@@ -249,6 +258,41 @@ User → /watchlist
    e. Each row shows "Setup Active" (all 4 rules pass) or
       "No Setup · Trend Filter Failed" (any rule fails, score halved).
    f. Info button opens the same SetupAuditModal used by the scanner.
+```
+
+### GMMA scanner flow — same shape, different engine
+
+```
+User → /gmma-scanner
+  │
+  ▼
+1. Same middleware + dashboard layout gates as Scanner.
+2. /gmma-scanner/page.tsx (RSC):
+   - getOrCreateSettings(supabase, user.id) → same settings row
+   - <GmmaScannerView settings={...} />
+3. GmmaScannerView (client):
+   a. On mount + every settings.refreshIntervalMinutes:
+      fetch('/api/scan-gmma?limit=N&maxAgeSeconds=...')
+   b. Route handler (app/api/scan-gmma/route.ts):
+      - Cache key = `gmma|<exclude>` — user-agnostic, 1-hour TTL,
+        same Map-based in-process cache pattern as /api/scan
+      - universeMinus(exclude) → fetchDailyBars (shared Alpaca layer)
+      - For each ticker: evaluateGmmaTicker(bars) (lib/gmma-scanner.ts)
+          · needs ≥ 60 bars (EMA60 seed + AO(34))
+          · rule 1: EMA30 > EMA35 > EMA40 > EMA45 > EMA50 > EMA60
+          · rule 2: EMA60 ≤ close ≤ EMA30 (pullback into the ribbon)
+          · rule 3: AO(t) > AO(t-1) (momentum turning up)
+          · targetSl = max(EMA60, 5-bar swing low); reject if ≥ close
+          · targetTp = close + 2 × (close - targetSl)  → 1:2 R:R
+      - rankGmmaResults → ascending riskPerShare / close
+        (tightest relative stop first), then slice top-N
+   c. Position sizing is client-side:
+      shares = floor(totalCapital × riskPerTradePct% / riskPerShare)
+      — so the cached payload is shareable across users while each
+      sees their own size. shares ≤ 0 renders "n/a" and disables Add.
+   d. + Add inserts into user_trades with the STRUCTURAL targets
+      (r.targetTp / r.targetSl), not the percentage-based computeTpSl
+      used by the classic scanner.
 ```
 
 ### Portfolio flow — server-side bars for chart expansions
@@ -383,6 +427,9 @@ One row per user. Schema mirrors `StrategySettings` in `lib/strategy.ts`:
 | `ma_short` / `ma_long` | int | 50 / 200 (CHECK `long > short`) |
 | `scanner_limit` | int | 10 (CHECK 1–100) |
 | `refresh_interval_minutes` | int | 5 |
+| `atr_min_pct` | numeric(5,4) | `0.0150` (CHECK 0–0.2) — ATR volatility floor (migration `0007`) |
+| `total_capital` | numeric(12,2) | `10000.00` (CHECK ≥ 0) — account size for GMMA position sizing (migration `0008`) |
+| `risk_per_trade_pct` | numeric(5,2) | `1.00` (CHECK 0–10, exclusive low) — % of capital risked per GMMA trade (migration `0008`) |
 | `updated_at` | timestamptz | trigger keeps fresh |
 
 ### RLS
@@ -437,6 +484,7 @@ Key invariants:
 - `ScanResult.chartBars` is always populated with the last 90 daily closes (or all available if fewer). This is the single source of truth for the chart embedded in the Scanner / Watchlist modals — no client-side Alpaca fetch.
 - The in-process cache is a `Map<cacheKey, { at, payload }>`. Scanner keys are `scanner|<risk>|<exclude>`; watchlist keys are `watchlist|<userId>|<risk>|<sortedSymbols>`. It survives between requests **on the same serverless instance** but does *not* survive cold starts. That's a feature, not a bug — Alpaca data is stale-tolerant for an hour but should be refreshed on every redeploy.
 - The watchlist `addSymbol` flow trusts `/api/symbols/search` to validate that the symbol is a live, tradable US equity. The server route requires authentication; the Alpaca `/v2/assets` list is fetched once per cold start and held in module memory.
+- `lib/gmma-scanner.ts` is a second, fully independent engine following the same conventions: pure TS, no framework imports, `evaluateGmmaTicker` returns `null` on any rule failure / insufficient history (< 60 bars) / non-positive risk-per-share, `rankGmmaResults` orders by ascending `riskPerShare / close`, and `GmmaScanResult.chartBars` / `.indices` reuse the same types and helpers as the classic `ScanResult`. Its cache (`gmmaScanCache`, keys `gmma|<exclude>`) is a separate `Map` from the classic scanner's, so the two never evict each other.
 
 ---
 
@@ -463,10 +511,11 @@ User-facing settings (TP %, SL %, RSI band, MA lengths, top-N, refresh interval)
 DashboardShell (lib component, client-side)
 ├── <aside> — vertical nav on lg, horizontal scroll on mobile
 │   ├── TrendScan wordmark
-│   ├── Scanner    /scanner   (◎)
-│   ├── Watchlist  /watchlist (★)
-│   ├── Portfolio  /portfolio (▣)
-│   ├── Settings   /settings  (⚙)
+│   ├── Scanner       /scanner      (◎)
+│   ├── GMMA Scanner  /gmma-scanner (⚡)
+│   ├── Watchlist     /watchlist    (★)
+│   ├── Portfolio     /portfolio    (▣)
+│   ├── Settings      /settings     (⚙)
 │   └── Log Out
 ├── <header> — current page title + avatar (initials from email)
 ├── <main> — children (the active view)
@@ -499,10 +548,13 @@ The marketing surface has its own minimal layout (`app/(marketing)/layout.tsx`) 
 |---|---|
 | Tune the scoring weights or clamps | `lib/scanner.ts` (`computeScan`) |
 | Change how watchlist failures are penalised | The `* 0.5` in `evaluateTickerForWatchlist` (`lib/scanner.ts`) |
-| Change the default strategy values | `STRATEGY_DEFAULTS` in `lib/strategy.ts` |
+| Tune the GMMA fan periods or entry rules | `EMA_PERIODS` + the rule checks in `evaluateGmmaTicker` (`lib/gmma-scanner.ts`) |
+| Change the GMMA stop anchors or the 1:2 R:R multiple | The `max(e60, low5d)` / `2 * riskPerShare` lines in `evaluateGmmaTicker` (`lib/gmma-scanner.ts`) |
+| Change how GMMA position size is computed | `computeShares` in `GmmaScannerView.tsx` |
+| Change the default strategy values (incl. capital / risk per trade) | `STRATEGY_DEFAULTS` in `lib/strategy.ts` |
 | Add a new ticker to the scanned universe | `lib/universe.json` |
-| Change the scanner cache TTL upper bound | `CACHE_TTL_MS` in `app/api/scan/route.ts` |
-| Change the default client-side max-age | `DEFAULT_MAX_AGE_MS` in `app/api/scan/route.ts` |
+| Change the scanner cache TTL upper bound | `CACHE_TTL_MS` in `app/api/scan/route.ts` and `app/api/scan-gmma/route.ts` |
+| Change the default client-side max-age | `DEFAULT_MAX_AGE_MS` in `app/api/scan/route.ts` and `app/api/scan-gmma/route.ts` |
 | Change how many chart bars the API ships | `CHART_BARS_LOOKBACK` in `lib/scanner.ts` (and `app/(dashboard)/portfolio/page.tsx` for the portfolio fetch) |
 | Add a new chart range option (e.g. 6mo) | `RANGE_BARS` map + the toggle group in `StockTargetChart.tsx`; bump server lookback if longer than 90 |
 | Restyle the chart (colors, gradient, axes) | `StockTargetChart.tsx` — Recharts is contained to this one file |

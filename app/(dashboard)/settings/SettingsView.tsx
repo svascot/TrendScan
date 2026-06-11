@@ -25,6 +25,8 @@ interface FormState {
   scannerLimit: string;
   refreshIntervalMinutes: string;
   atrMinPct: string;
+  totalCapital: string;
+  riskPerTradePct: string;
 }
 
 function toForm(s: StrategySettings): FormState {
@@ -38,6 +40,8 @@ function toForm(s: StrategySettings): FormState {
     scannerLimit: s.scannerLimit.toString(),
     refreshIntervalMinutes: s.refreshIntervalMinutes.toString(),
     atrMinPct: (s.atrMinPct * 100).toFixed(2),
+    totalCapital: s.totalCapital.toFixed(2),
+    riskPerTradePct: s.riskPerTradePct.toFixed(2),
   };
 }
 
@@ -73,6 +77,8 @@ export function SettingsView({ initial }: Props) {
       scannerLimit: parseInt(form.scannerLimit, 10),
       refreshIntervalMinutes: parseInt(form.refreshIntervalMinutes, 10),
       atrMinPct: parseFloat(form.atrMinPct) / 100,
+      totalCapital: parseFloat(form.totalCapital),
+      riskPerTradePct: parseFloat(form.riskPerTradePct),
     });
 
     if (!parsed.success) {
@@ -96,6 +102,8 @@ export function SettingsView({ initial }: Props) {
         scanner_limit: parsed.data.scannerLimit,
         refresh_interval_minutes: parsed.data.refreshIntervalMinutes,
         atr_min_pct: parsed.data.atrMinPct,
+        total_capital: parsed.data.totalCapital,
+        risk_per_trade_pct: parsed.data.riskPerTradePct,
       };
       const { error } = await supabase
         .from("user_settings")
@@ -152,6 +160,26 @@ export function SettingsView({ initial }: Props) {
             suffix="%"
             value={form.atrMinPct}
             onChange={(v) => update("atrMinPct", v)}
+            step="0.1"
+          />
+        </Section>
+
+        <Section
+          title="Money Management"
+          hint="Used by the GMMA scanner to size each position so a stop-out costs exactly the configured % of capital. Typical risk per trade: 0.5%–2%."
+        >
+          <Field
+            label="Total Capital"
+            suffix="$"
+            value={form.totalCapital}
+            onChange={(v) => update("totalCapital", v)}
+            step="100"
+          />
+          <Field
+            label="Risk per Trade"
+            suffix="%"
+            value={form.riskPerTradePct}
+            onChange={(v) => update("riskPerTradePct", v)}
             step="0.1"
           />
         </Section>
