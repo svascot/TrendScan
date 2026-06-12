@@ -27,6 +27,7 @@ interface FormState {
   atrMinPct: string;
   totalCapital: string;
   riskPerTradePct: string;
+  brokerFeeUsd: string;
 }
 
 function toForm(s: StrategySettings): FormState {
@@ -42,6 +43,7 @@ function toForm(s: StrategySettings): FormState {
     atrMinPct: (s.atrMinPct * 100).toFixed(2),
     totalCapital: s.totalCapital.toFixed(2),
     riskPerTradePct: s.riskPerTradePct.toFixed(2),
+    brokerFeeUsd: s.brokerFeeUsd.toFixed(2),
   };
 }
 
@@ -79,6 +81,7 @@ export function SettingsView({ initial }: Props) {
       atrMinPct: parseFloat(form.atrMinPct) / 100,
       totalCapital: parseFloat(form.totalCapital),
       riskPerTradePct: parseFloat(form.riskPerTradePct),
+      brokerFeeUsd: parseFloat(form.brokerFeeUsd),
     });
 
     if (!parsed.success) {
@@ -104,6 +107,7 @@ export function SettingsView({ initial }: Props) {
         atr_min_pct: parsed.data.atrMinPct,
         total_capital: parsed.data.totalCapital,
         risk_per_trade_pct: parsed.data.riskPerTradePct,
+        broker_fee_usd: parsed.data.brokerFeeUsd,
       };
       const { error } = await supabase
         .from("user_settings")
@@ -138,7 +142,7 @@ export function SettingsView({ initial }: Props) {
           hint="Symmetric 1:2 risk:reward is the system default. Lower TP = easier to hit, lower per-trade payoff."
         >
           <Field label="Take Profit %" suffix="%" value={form.tpPct} onChange={(v) => update("tpPct", v)} step="0.1" />
-          <Field label="Stop Loss %" suffix="%" value={form.slPct} onChange={(v) => update("slPct", v)} step="0.1" />
+          <Field label="Stop Loss %" suffix="%" value={form.slPct} onChange={(v) => update("slPct", v)} step="0.1" min="0" />
         </Section>
 
         <Section
@@ -166,7 +170,8 @@ export function SettingsView({ initial }: Props) {
 
         <Section
           title="Money Management"
-          hint="Used by the GMMA scanner to size each position so a stop-out costs exactly the configured % of capital. Typical risk per trade: 0.5%–2%."
+          helpId="moneyManagement"
+          hint="Used by the GMMA scanner to size each position so a stop-out costs exactly the configured % of capital. The broker fee (round trip) is added on top of the take-profit so wins still net 2:1 after commissions."
         >
           <Field
             label="Total Capital"
@@ -181,6 +186,14 @@ export function SettingsView({ initial }: Props) {
             value={form.riskPerTradePct}
             onChange={(v) => update("riskPerTradePct", v)}
             step="0.1"
+          />
+          <Field
+            label="Broker Fee per Trade"
+            suffix="$"
+            value={form.brokerFeeUsd}
+            onChange={(v) => update("brokerFeeUsd", v)}
+            step="0.5"
+            min="0"
           />
         </Section>
 
@@ -255,8 +268,8 @@ function Section({
 }
 
 function Field({
-  label, value, onChange, suffix, step,
-}: { label: string; value: string; onChange: (v: string) => void; suffix?: string; step?: string }) {
+  label, value, onChange, suffix, step, min,
+}: { label: string; value: string; onChange: (v: string) => void; suffix?: string; step?: string; min?: string }) {
   return (
     <label className="block">
       <span className="text-xs uppercase tracking-widest text-slate-400">{label}</span>
@@ -265,6 +278,7 @@ function Field({
           type="number"
           inputMode="decimal"
           step={step}
+          min={min}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           className="w-full bg-transparent px-3 py-2 text-slate-100 outline-none"

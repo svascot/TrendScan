@@ -71,7 +71,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
     return () => clearInterval(id);
   }, [limit, fetchScan, refreshMinutes]);
 
-  async function onAdd(r: GmmaScanResult) {
+  async function onAdd(r: GmmaScanResult, targetTp: number) {
     setAddingTicker(r.ticker);
     try {
       const supabase = createClient();
@@ -81,7 +81,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
         user_id: userData.user.id,
         ticker: r.ticker,
         entry_price: r.close,
-        target_tp: r.targetTp,
+        target_tp: targetTp,
         target_sl: r.targetSl,
         status: "OPEN",
       });
@@ -117,6 +117,12 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
             Structural stop loss + dynamic 1:2 risk:reward. Position size is computed for your{" "}
             <span className="text-emerald-300">{settings.riskPerTradePct.toFixed(2)}% risk</span> per trade on a{" "}
             <span className="text-emerald-300">${settings.totalCapital.toLocaleString()}</span> account.
+            {settings.brokerFeeUsd > 0 && (
+              <>
+                {" "}TP targets include your{" "}
+                <span className="text-emerald-300">${settings.brokerFeeUsd.toFixed(2)}</span> broker fee.
+              </>
+            )}
           </p>
           {generated && (
             <p className="mt-1 text-xs text-slate-500">
@@ -176,6 +182,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
         )}
         {filteredStocks.map((r) => {
           const shares = computeShares(riskUsd, r.close, r.targetSl);
+          const targetTp = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
           const added = addedTickers.has(r.ticker);
           return (
             <article
@@ -202,7 +209,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
                   <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
                     Target TP
                   </dt>
-                  <dd className="mt-1 font-mono text-emerald-300">${formatPrice(r.targetTp)}</dd>
+                  <dd className="mt-1 font-mono text-emerald-300">${formatPrice(targetTp)}</dd>
                 </div>
                 <div className="text-right">
                   <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
@@ -227,7 +234,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
               <div className="mt-4 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => onAdd(r)}
+                  onClick={() => onAdd(r, targetTp)}
                   disabled={addingTicker === r.ticker || added || shares <= 0}
                   className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition ${
                     added
@@ -280,6 +287,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
             )}
             {filteredStocks.map((r) => {
               const shares = computeShares(riskUsd, r.close, r.targetSl);
+              const targetTp = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
               const added = addedTickers.has(r.ticker);
               return (
                 <tr key={r.ticker} className="border-b border-slate-800/60 last:border-b-0 hover:bg-slate-800/30">
@@ -294,7 +302,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
                     </a>
                   </td>
                   <td className="px-4 py-3 text-right font-mono text-slate-100">${formatPrice(r.close)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-emerald-300">${formatPrice(r.targetTp)}</td>
+                  <td className="px-4 py-3 text-right font-mono text-emerald-300">${formatPrice(targetTp)}</td>
                   <td className="px-4 py-3 text-right font-mono text-red-300">${formatPrice(r.targetSl)}</td>
                   <td className="px-4 py-3 text-right font-mono text-slate-300">${formatPrice(r.riskPerShare)}</td>
                   <td className="px-4 py-3 text-right">
@@ -304,7 +312,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
                     <div className="flex justify-end gap-2">
                       <button
                         type="button"
-                        onClick={() => onAdd(r)}
+                        onClick={() => onAdd(r, targetTp)}
                         disabled={addingTicker === r.ticker || added || shares <= 0}
                         className={`rounded px-2.5 py-1 text-xs font-medium transition ${
                           added
@@ -327,7 +335,9 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
         Position sizing uses your{" "}
         <span className="text-emerald-400">${settings.totalCapital.toLocaleString()}</span> capital ×{" "}
         <span className="text-emerald-400">{settings.riskPerTradePct.toFixed(2)}%</span> per trade
-        (= ${riskUsd.toFixed(2)} risk / trade). Edit in{" "}
+        (= ${riskUsd.toFixed(2)} risk / trade). TP targets are raised by{" "}
+        <span className="text-emerald-400">${settings.brokerFeeUsd.toFixed(2)}</span> ÷ shares so wins
+        net 2:1 after broker fees. Edit in{" "}
         <a href="/settings" className="text-emerald-400 hover:underline" onClick={(e) => { e.preventDefault(); router.push("/settings"); }}>Settings</a>.
       </p>
     </div>
@@ -338,6 +348,13 @@ function computeShares(riskUsd: number, entry: number, stop: number): number {
   const perShare = entry - stop;
   if (perShare <= 0 || riskUsd <= 0) return 0;
   return Math.floor(riskUsd / perShare);
+}
+
+// Raise the TP by the round-trip broker fee spread across the position, so a win
+// covers the commission first and still nets 2x the risked amount.
+function feeAdjustedTp(targetTp: number, feeUsd: number, shares: number): number {
+  if (shares <= 0 || feeUsd <= 0) return targetTp;
+  return Math.round((targetTp + feeUsd / shares) * 100) / 100;
 }
 
 function LoadingCard() {

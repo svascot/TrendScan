@@ -12,6 +12,7 @@ export interface StrategySettings {
   atrMinPct: number; // e.g. 0.015 = 1.5% — min (ATR/close) for the volatility filter
   totalCapital: number; // USD, account size used for GMMA position sizing
   riskPerTradePct: number; // percent, e.g. 1.0 = 1% risked per trade
+  brokerFeeUsd: number; // USD per round trip (entry + exit combined), covered by the GMMA TP
 }
 
 export const STRATEGY_DEFAULTS: StrategySettings = {
@@ -26,11 +27,12 @@ export const STRATEGY_DEFAULTS: StrategySettings = {
   atrMinPct: 0.015,
   totalCapital: 10000,
   riskPerTradePct: 1.0,
+  brokerFeeUsd: 2.0,
 };
 
 export const strategySchema = z.object({
   tpPct: z.number().min(0.005).max(0.2),
-  slPct: z.number().min(0.005).max(0.2),
+  slPct: z.number().min(0).max(0.2),
   rsiLow: z.number().int().min(0).max(99),
   rsiHigh: z.number().int().min(1).max(100),
   maShort: z.number().int().min(5).max(100),
@@ -40,6 +42,7 @@ export const strategySchema = z.object({
   atrMinPct: z.number().min(0).max(0.2),
   totalCapital: z.number().min(0).max(1_000_000_000),
   riskPerTradePct: z.number().min(0.1).max(10),
+  brokerFeeUsd: z.number().min(0).max(100),
 }).refine((s) => s.rsiHigh > s.rsiLow, {
   message: "rsiHigh must be greater than rsiLow",
   path: ["rsiHigh"],
@@ -72,6 +75,7 @@ export type DbSettingsRow = {
   atr_min_pct?: number | null;
   total_capital?: number | null;
   risk_per_trade_pct?: number | null;
+  broker_fee_usd?: number | null;
   updated_at?: string;
 };
 
@@ -101,6 +105,10 @@ export function settingsFromRow(row: DbSettingsRow | null): StrategySettings {
       row.risk_per_trade_pct == null
         ? STRATEGY_DEFAULTS.riskPerTradePct
         : Number(row.risk_per_trade_pct),
+    brokerFeeUsd:
+      row.broker_fee_usd == null
+        ? STRATEGY_DEFAULTS.brokerFeeUsd
+        : Number(row.broker_fee_usd),
   };
 }
 
@@ -118,5 +126,6 @@ export function settingsToRow(userId: string, s: StrategySettings): DbSettingsRo
     atr_min_pct: s.atrMinPct,
     total_capital: s.totalCapital,
     risk_per_trade_pct: s.riskPerTradePct,
+    broker_fee_usd: s.brokerFeeUsd,
   };
 }
