@@ -30,6 +30,14 @@ export const SETTINGS_EDUCATION = {
       "For a short-term swing trading strategy (1–5 days), the asset must move enough daily to actually hit your 4% Take Profit target. If a stock only moves 0.5% a day, it could take weeks to hit your target, exposing you to unnecessary holding risk.",
     tip: "Keep this at or above 1.5% to ensure you are scanning for 'fast movers' that can quickly hit your targets during a momentum burst.",
   },
+  moneyManagement: {
+    title: "Money Management & Broker Fees",
+    concept:
+      "Total Capital and Risk per Trade size each GMMA position so a stop-out costs exactly your configured % of capital. Broker Fee is the flat USD commission your broker charges for a full round trip (opening plus closing the trade).",
+    rationale:
+      "Fees silently erode your edge: a winning trade that pays exactly 2:1 gross actually nets less once commissions are deducted. TrendScan raises the GMMA Take Profit by fee ÷ shares, so when the target is hit your profit covers the commission first and still nets 2× the amount you risked.",
+    tip: "Enter the combined cost of entry + exit. If your broker is commission-free, set this to 0 and the TP falls back to the pure 2:1 bracket.",
+  },
   movingAverages: {
     title: "Structural Moving Averages (MA)",
     concept:

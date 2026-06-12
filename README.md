@@ -8,7 +8,7 @@ A lightweight, hosted momentum scanner + manual portfolio tracker built for a sm
 
 - Scans a curated universe of ~600 large-cap US equities + premium ETFs (S&P 500, Nasdaq 100, SPY/QQQ/SCHD/JEPQ, sector SPDRs) against four hard rules every visit.
 - Ranks the survivors with a transparent 3-factor composite score.
-- Runs a second, independent **GMMA scanner** over the same universe — a Guppy Multiple Moving Average fan (EMA 30/35/40/45/50/60) plus an Awesome Oscillator momentum trigger. Each match ships a structural stop loss, a dynamic 1:2 take-profit, and a position size in shares derived from the user's money-management settings (total capital × risk per trade).
+- Runs a second, independent **GMMA scanner** over the same universe — a Guppy Multiple Moving Average fan (EMA 30/35/40/45/50/60) plus an Awesome Oscillator momentum trigger. Each match ships a structural stop loss, a dynamic 1:2 take-profit raised to also cover the user's flat broker fee, and a position size in shares derived from the user's money-management settings (total capital × risk per trade).
 - Lets each user maintain a personal **watchlist** of arbitrary US equities — autocompleted from Alpaca's tradable-asset feed — and runs the same scoring engine against it. Failing setups stay visible with their score halved so you can watch them recover.
 - Lets each user manually track open trades against personalised TP/SL targets and archive closed ones with a running win rate.
 - Stays on permanent free tiers across Vercel + Supabase + Alpaca.
@@ -221,7 +221,17 @@ Position size is computed client-side from two per-user **Money Management** set
 
 $$\text{shares} = \left\lfloor \frac{\text{totalCapital} \cdot \text{riskPerTradePct} / 100}{\text{risk/share}} \right\rfloor$$
 
-Defaults: `totalCapital = $10,000`, `riskPerTradePct = 1.0%` → a stop-out costs exactly $100. Clicking **+ Add** snapshots the entry, structural SL, and 1:2 TP into `user_trades`, same immutability rule as the classic scanner.
+Defaults: `totalCapital = $10,000`, `riskPerTradePct = 1.0%` → a stop-out costs exactly $100.
+
+### Broker-fee-adjusted take profit
+
+A third money-management setting, `brokerFeeUsd` (migration `0009`, default `$2.00`), holds the flat commission your broker charges per **round trip** (entry + exit combined). The displayed TP is raised so a win pays the commission first and *then* nets 2× the risked amount:
+
+$$\text{target}_\text{TP}^{adj} = \text{target}_\text{TP} + \frac{\text{brokerFeeUsd}}{\text{shares}}$$
+
+Example: 100 shares, $1 risk/share, $2 fee → TP sits $0.02 above the raw 1:2 level; hitting it grosses $202, nets $200 after the fee = exactly 2× the $100 risk. The adjustment is applied client-side in `GmmaScannerView.tsx` (`feeAdjustedTp`) — the API payload and cache keep the raw structural TP. With a fee of `0` (commission-free broker) the TP falls back to the pure 1:2 bracket. When shares can't be computed (`n/a` rows), the raw TP is shown and **+ Add** stays disabled.
+
+Clicking **+ Add** snapshots the entry, structural SL, and the **fee-adjusted** TP into `user_trades`, same immutability rule as the classic scanner.
 
 ### Caching
 
@@ -256,7 +266,8 @@ cp .env.local.example .env.local
 #   supabase/migrations/0006_user_watchlist.sql
 #   supabase/migrations/0007_user_settings_atr_min_pct.sql
 #   supabase/migrations/0008_user_settings_money_mgmt.sql
-# Or paste all the individual files in order (0001 → 0008).
+#   supabase/migrations/0009_user_settings_broker_fee.sql
+# Or paste all the individual files in order (0001 → 0009).
 
 # 4. Configure auth — see "Supabase auth configuration" below.
 
@@ -470,7 +481,7 @@ Response (truncated):
 }
 ```
 
-Position sizing is **not** in the response — the client computes shares from the user's money-management settings, so two users see different sizes for the same payload (and the cache stays user-agnostic, keyed only by `gmma|<exclude>`).
+Position sizing is **not** in the response — the client computes shares from the user's money-management settings, so two users see different sizes for the same payload (and the cache stays user-agnostic, keyed only by `gmma|<exclude>`). The same goes for the broker-fee TP adjustment: `targetTp` in the payload is always the raw structural 1:2 level; the client adds `brokerFeeUsd / shares` on top before displaying or saving it.
 
 ### `GET /api/symbols/search?q=...`
 

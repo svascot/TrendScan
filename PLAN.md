@@ -12,6 +12,7 @@
 > - **Risk levels are live** — `/api/scan?risk=low|med|high` widens or narrows the RSI band as the original plan described; it isn't exposed in the Settings UI yet, but the route honors it.
 > - **Indicators library grew** — `lib/indicators.ts` exports the SMA, the Wilder RSI(14), `meanLast(values, n)` (volume-injection score), ATR and ROC (volatility gatekeeper), plus EMA and the Awesome Oscillator (GMMA scanner).
 > - **GMMA scanner** (`/gmma-scanner`) — a second, independent scanning strategy over the same universe: ordered Guppy EMA fan (30/35/40/45/50/60), price pulled back inside the EMA30–EMA60 channel, and a rising Awesome Oscillator. Setups carry a structural stop (the tighter of EMA60 or the 5-bar swing low) and a dynamic 1:2 take profit, and the UI sizes each position from new per-user **money-management settings** (`total_capital`, `risk_per_trade_pct` — migration `0008_user_settings_money_mgmt.sql`). Served by `/api/scan-gmma` with engine code in `lib/gmma-scanner.ts`.
+> - **Broker-fee-adjusted take profit** — a third money-management setting, `broker_fee_usd` (migration `0009_user_settings_broker_fee.sql`, default $2.00), holds the flat round-trip commission. The GMMA UI raises each displayed/saved TP by `fee ÷ shares` (`feeAdjustedTp` in `GmmaScannerView.tsx`) so a winning trade covers the commission and still nets 2× the risked amount; the API payload keeps the raw structural 1:2 TP so the scan cache stays user-agnostic.
 >
 > Items the original plan covered that did **not** ship as described:
 >
