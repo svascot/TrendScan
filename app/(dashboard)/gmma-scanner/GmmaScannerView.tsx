@@ -181,7 +181,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
           </div>
         )}
         {filteredStocks.map((r) => {
-          const shares = computeShares(riskUsd, r.close, r.targetSl);
+          const shares = computeShares(riskUsd, r.close, r.targetSl, settings.totalCapital);
           const targetTp = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
           const added = addedTickers.has(r.ticker);
           return (
@@ -286,7 +286,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
               </tr>
             )}
             {filteredStocks.map((r) => {
-              const shares = computeShares(riskUsd, r.close, r.targetSl);
+              const shares = computeShares(riskUsd, r.close, r.targetSl, settings.totalCapital);
               const targetTp = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
               const added = addedTickers.has(r.ticker);
               return (
@@ -335,7 +335,8 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
         Position sizing uses your{" "}
         <span className="text-emerald-400">${settings.totalCapital.toLocaleString()}</span> capital ×{" "}
         <span className="text-emerald-400">{settings.riskPerTradePct.toFixed(2)}%</span> per trade
-        (= ${riskUsd.toFixed(2)} risk / trade). TP targets are raised by{" "}
+        (= ${riskUsd.toFixed(2)} risk / trade), capped at what your capital can buy
+        (fractional shares). TP targets are raised by{" "}
         <span className="text-emerald-400">${settings.brokerFeeUsd.toFixed(2)}</span> ÷ shares so wins
         net 2:1 after broker fees. Edit in{" "}
         <a href="/settings" className="text-emerald-400 hover:underline" onClick={(e) => { e.preventDefault(); router.push("/settings"); }}>Settings</a>.
@@ -344,10 +345,13 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
   );
 }
 
-function computeShares(riskUsd: number, entry: number, stop: number): number {
+// eToro supports fractional shares: size by risk, capped by what the capital
+// can actually buy. Rounded down to 2 decimals so neither limit is exceeded.
+function computeShares(riskUsd: number, entry: number, stop: number, capitalUsd: number): number {
   const perShare = entry - stop;
-  if (perShare <= 0 || riskUsd <= 0) return 0;
-  return Math.floor(riskUsd / perShare);
+  if (perShare <= 0 || riskUsd <= 0 || entry <= 0) return 0;
+  const shares = Math.min(riskUsd / perShare, capitalUsd / entry);
+  return Math.floor(shares * 100) / 100;
 }
 
 // Raise the TP by the round-trip broker fee spread across the position, so a win
@@ -381,7 +385,7 @@ function SharesBadge({ shares }: { shares: number }) {
   }
   return (
     <span className="inline-flex items-center rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-xs font-semibold text-emerald-300">
-      {shares}
+      {Number.isInteger(shares) ? shares : shares.toFixed(2)}
     </span>
   );
 }
