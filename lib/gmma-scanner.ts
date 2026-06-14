@@ -1,9 +1,26 @@
-import { awesomeOscillator, ema } from "./indicators";
 import {
-  type ChartBar,
-  type DailyBar,
-} from "./scanner";
+  awesomeOscillator,
+  awesomeOscillatorSeries,
+  ema,
+  emaSeries,
+} from "./indicators";
+import { type DailyBar } from "./scanner";
 import { getIndicesFor, type IndexName } from "./universe";
+
+// Per-bar chart series for the GMMA detail panel: close + the 6 Guppy EMAs +
+// the Awesome Oscillator, all aligned to the same date. EMA/AO fields are null
+// during their warm-up window so the chart can gap them cleanly.
+export interface GmmaChartBar {
+  date: string; // YYYY-MM-DD
+  close: number;
+  ema30: number | null;
+  ema35: number | null;
+  ema40: number | null;
+  ema45: number | null;
+  ema50: number | null;
+  ema60: number | null;
+  ao: number | null;
+}
 
 export interface GmmaBreakdown {
   rule1FanOrderedPass: boolean; // EMA30 > EMA35 > EMA40 > EMA45 > EMA50 > EMA60
@@ -28,7 +45,7 @@ export interface GmmaScanResult {
   riskPerShare: number; // close - targetSl
   rrRatio: number; // (targetTp - close) / (close - targetSl) — by construction = 2
   indices: IndexName[];
-  chartBars: ChartBar[];
+  chartBars: GmmaChartBar[];
   breakdown: GmmaBreakdown;
 }
 
@@ -36,12 +53,39 @@ const CHART_BARS_LOOKBACK = 90;
 const EMA_PERIODS = [30, 35, 40, 45, 50, 60] as const;
 const MIN_BARS = 60; // need EMA(60) seed + AO(34); 60 closes is the binding minimum
 
-function lastChartBars(bars: readonly DailyBar[]): ChartBar[] {
-  const slice = bars.slice(-CHART_BARS_LOOKBACK);
-  return slice.map((b) => ({
-    date: b.t.slice(0, 10),
-    close: round2(b.c),
-  }));
+// Build the enriched chart series for the last ~90 bars. The EMA/AO series are
+// computed over the FULL history first (so values inside the lookback window are
+// fully warmed up), then sliced to the visible window.
+function buildGmmaChartBars(
+  bars: readonly DailyBar[],
+  closes: readonly number[],
+  highs: readonly number[],
+  lows: readonly number[],
+): GmmaChartBar[] {
+  const s30 = emaSeries(closes, 30);
+  const s35 = emaSeries(closes, 35);
+  const s40 = emaSeries(closes, 40);
+  const s45 = emaSeries(closes, 45);
+  const s50 = emaSeries(closes, 50);
+  const s60 = emaSeries(closes, 60);
+  const aoSer = awesomeOscillatorSeries(highs, lows);
+
+  const start = Math.max(0, bars.length - CHART_BARS_LOOKBACK);
+  const out: GmmaChartBar[] = [];
+  for (let i = start; i < bars.length; i++) {
+    out.push({
+      date: bars[i].t.slice(0, 10),
+      close: round2(bars[i].c),
+      ema30: round2OrNull(s30[i]),
+      ema35: round2OrNull(s35[i]),
+      ema40: round2OrNull(s40[i]),
+      ema45: round2OrNull(s45[i]),
+      ema50: round2OrNull(s50[i]),
+      ema60: round2OrNull(s60[i]),
+      ao: round4OrNull(aoSer[i]),
+    });
+  }
+  return out;
 }
 
 export function evaluateGmmaTicker(
@@ -98,7 +142,7 @@ export function evaluateGmmaTicker(
     riskPerShare: round2(riskPerShare),
     rrRatio: 2,
     indices: getIndicesFor(ticker),
-    chartBars: lastChartBars(bars),
+    chartBars: buildGmmaChartBars(bars, closes, highs, lows),
     breakdown: {
       rule1FanOrderedPass: rule1,
       rule2PriceInChannelPass: rule2,
@@ -118,6 +162,8 @@ export function rankGmmaResults(results: GmmaScanResult[]): GmmaScanResult[] {
 
 function round2(n: number): number { return Math.round(n * 100) / 100; }
 function round4(n: number): number { return Math.round(n * 10000) / 10000; }
+function round2OrNull(n: number | null): number | null { return n === null ? null : round2(n); }
+function round4OrNull(n: number | null): number | null { return n === null ? null : round4(n); }
 
 export interface GmmaScanResponse {
   generatedAt: string;
