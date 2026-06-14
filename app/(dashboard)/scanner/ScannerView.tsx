@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { computeTpSl, type StrategySettings } from "@/lib/strategy";
+import { computePositionShares, computeTpSl, type StrategySettings } from "@/lib/strategy";
 import { etoroLink, formatPrice } from "@/lib/format";
 import type { ScanResult } from "@/lib/scanner";
 import { SetupAuditModal } from "./SetupAuditModal";
@@ -30,6 +30,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
   const [auditRow, setAuditRow] = useState<ScanResult | null>(null);
   const [filters, setFilters] = useState({ sp500: true, nasdaq100: true });
   const [reloading, setReloading] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   async function hardReload() {
     if (reloading) return;
@@ -216,10 +217,10 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
         </div>
       )}
 
-      {/* Mobile card layout */}
+      {/* Mobile card layout — progressive disclosure */}
       <div className="space-y-3 md:hidden">
         {loading && !data && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-10 text-center text-sm text-slate-400">
+          <div className="rounded-2xl border border-hairline/60 bg-panel/50 px-4 py-10 text-center text-sm text-slate-400">
             <span className="inline-flex items-center gap-3">
               <span
                 aria-hidden
@@ -230,68 +231,113 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
           </div>
         )}
         {!loading && data && filteredStocks.length === 0 && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-10 text-center text-sm text-slate-400">
+          <div className="rounded-2xl border border-hairline/60 bg-panel/50 px-4 py-10 text-center text-sm text-slate-400">
             No setups passed all four rules today. Re-check tomorrow.
           </div>
         )}
         {filteredStocks.map((r) => {
           const { targetTp, targetSl } = computeTpSl(r.close, settings);
+          const shares = computePositionShares(r.close, settings);
           const added = addedTickers.has(r.ticker);
+          const open = expanded === r.ticker;
           return (
             <article
               key={r.ticker}
-              className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
+              className={`overflow-hidden rounded-2xl border bg-panel/50 transition-colors ${
+                open ? "border-emerald-500/30" : "border-hairline/60"
+              }`}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <a
-                    href={etoroLink(r.ticker)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-lg font-semibold text-emerald-400 hover:underline"
-                  >
+              {/* Tap target: header toggles the disclosure panel */}
+              <button
+                type="button"
+                onClick={() => setExpanded(open ? null : r.ticker)}
+                aria-expanded={open}
+                className="flex w-full min-h-[44px] flex-col gap-2 px-4 py-3 text-left"
+              >
+                {/* Top line — ticker + current price */}
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-base font-semibold tracking-tight text-slate-50">
                     {r.ticker}
-                  </a>
-                  <p className="mt-0.5 font-mono text-sm text-slate-100">{formatPrice(r.close)}</p>
+                  </span>
+                  <span className="font-mono text-base tabular-nums text-slate-100">
+                    {formatPrice(r.close)}
+                  </span>
                 </div>
-                <ScoreCell score={r.score} tier={r.tier} />
-              </div>
 
-              <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-800/60 pt-3 text-sm">
-                <div>
-                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-                    Target TP
-                  </dt>
-                  <dd className="mt-1 font-mono text-emerald-300">{formatPrice(targetTp)}</dd>
+                {/* Middle line — momentum badge + position size */}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
+                    <span className="font-mono tabular-nums">{r.score.toFixed(1)}%</span>
+                    <span className="text-[10px] uppercase tracking-wider text-emerald-400/70">
+                      {r.tier}
+                    </span>
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <span className="font-mono tabular-nums text-slate-200">{shares}</span>
+                    <span className="text-[10px] uppercase tracking-wider text-slate-500">shares</span>
+                    <Chevron open={open} />
+                  </span>
                 </div>
-                <div className="text-right">
-                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-                    Target SL
-                  </dt>
-                  <dd className="mt-1 font-mono text-red-300">{formatPrice(targetSl)}</dd>
-                </div>
-              </dl>
+              </button>
 
-              <div className="mt-4 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setAuditRow(r)}
-                  className="flex-1 rounded-md border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
-                >
-                  Info
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onAdd(r)}
-                  disabled={addingTicker === r.ticker || added}
-                  className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition ${
-                    added
-                      ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                      : "border border-emerald-500/40 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
-                  } disabled:opacity-60`}
-                >
-                  {added ? "Added" : addingTicker === r.ticker ? "Adding…" : "+ Add"}
-                </button>
+              {/* Expansion line — animated via grid-rows (no JS height measuring) */}
+              <div
+                className={`grid transition-all duration-300 ease-spring ${
+                  open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+                }`}
+              >
+                <div className="overflow-hidden">
+                  <div className="border-t border-hairline/60 px-4 py-3">
+                    <dl className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="text-[10px] uppercase tracking-widest text-slate-500">
+                          Target TP
+                        </dt>
+                        <dd className="mt-1 font-mono tabular-nums text-emerald-300">
+                          {formatPrice(targetTp)}
+                        </dd>
+                      </div>
+                      <div className="text-right">
+                        <dt className="text-[10px] uppercase tracking-widest text-slate-500">
+                          Target SL
+                        </dt>
+                        <dd className="mt-1 font-mono tabular-nums text-red-300">
+                          {formatPrice(targetSl)}
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <div className="mt-4 flex gap-2">
+                      <a
+                        href={etoroLink(r.ticker)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex min-h-[44px] flex-1 items-center justify-center rounded-xl border border-hairline px-3 text-xs font-medium text-slate-300 transition-colors hover:border-emerald-400/50 hover:text-emerald-300"
+                      >
+                        eToro
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => setAuditRow(r)}
+                        className="flex min-h-[44px] flex-1 items-center justify-center rounded-xl border border-hairline px-3 text-xs font-medium text-slate-300 transition-colors hover:border-emerald-400/50 hover:text-emerald-300"
+                      >
+                        Info
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onAdd(r)}
+                        disabled={addingTicker === r.ticker || added}
+                        className={`flex min-h-[44px] flex-1 items-center justify-center rounded-xl px-3 text-xs font-semibold transition-colors ${
+                          added
+                            ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                            : "bg-emerald-500 text-slate-950 hover:bg-emerald-400"
+                        } disabled:opacity-60`}
+                      >
+                        {added ? "Added" : addingTicker === r.ticker ? "Adding…" : "+ Add"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </article>
           );
@@ -299,9 +345,9 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
       </div>
 
       {/* Desktop table layout */}
-      <div className="hidden overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40 md:block">
+      <div className="hidden overflow-hidden rounded-2xl border border-hairline/60 bg-panel/50 shadow-panel md:block">
         <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-800 bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400">
+          <thead className="border-b border-hairline/70 bg-slate-950/50 text-xs uppercase tracking-wider text-slate-400">
             <tr>
               <th className="px-4 py-3">Ticker</th>
               <th className="px-4 py-3 text-right">Price</th>
@@ -337,7 +383,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
               const { targetTp, targetSl } = computeTpSl(r.close, settings);
               const added = addedTickers.has(r.ticker);
               return (
-                <tr key={r.ticker} className="border-b border-slate-800/60 last:border-b-0 hover:bg-slate-800/30">
+                <tr key={r.ticker} className="border-b border-hairline/50 last:border-b-0 hover:bg-slate-800/20">
                   <td className="px-4 py-3">
                     <a
                       href={etoroLink(r.ticker)}
@@ -348,12 +394,12 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
                       {r.ticker}
                     </a>
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-100">{formatPrice(r.close)}</td>
+                  <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-100">{formatPrice(r.close)}</td>
                   <td className="px-4 py-3 text-right">
                     <ScoreCell score={r.score} tier={r.tier} />
                   </td>
-                  <td className="px-4 py-3 text-right font-mono text-emerald-300">{formatPrice(targetTp)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-red-300">{formatPrice(targetSl)}</td>
+                  <td className="px-4 py-3 text-right font-mono tabular-nums text-emerald-300">{formatPrice(targetTp)}</td>
+                  <td className="px-4 py-3 text-right font-mono tabular-nums text-red-300">{formatPrice(targetSl)}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex justify-end gap-2">
                       <button
@@ -446,10 +492,30 @@ function ScoreCell({ score, tier }: { score: number; tier: "High" | "Med" | "Low
       : "border-slate-600/40 bg-slate-700/30 text-slate-300";
   return (
     <span className="inline-flex items-center gap-2">
-      <span className={`font-mono font-semibold ${color}`}>{score.toFixed(1)}%</span>
+      <span className={`font-mono font-semibold tabular-nums ${color}`}>{score.toFixed(1)}%</span>
       <span className={`rounded border px-1.5 py-0.5 text-[10px] uppercase tracking-wider ${badge}`}>
         {tier}
       </span>
     </span>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={`h-4 w-4 text-slate-500 transition-transform duration-300 ease-spring ${
+        open ? "rotate-180" : ""
+      }`}
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
   );
 }
