@@ -8,11 +8,20 @@
 
 html,
 body {
-  background-color: #0f172a; /* slate-900 */
+  background-color: #090d16; /* ink — institutional near-black slate */
   color: #e2e8f0; /* slate-200 */
   min-height: 100vh;
+  /* Lock numerals to tabular figures app-wide so prices don't jump on refresh */
+  font-feature-settings: "tnum" 1, "cv01" 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 * {
   border-color: rgb(30 41 59 / 1); /* slate-800 */
+}
+
+/* Honor the device safe-area (iOS home indicator) for the bottom nav bar */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }

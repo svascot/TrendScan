@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { ScanResult } from "@/lib/scanner";
 import { computeTpSl, type StrategySettings } from "@/lib/strategy";
 import { StockTargetChart } from "../_components/StockTargetChart";
@@ -12,6 +12,22 @@ interface Props {
 }
 
 export function SetupAuditModal({ row, settings, onClose }: Props) {
+  // Drive the enter transition: false on mount → true next frame so the panel
+  // slides up from the bottom (mobile) / fades in (desktop) with a spring ease.
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -29,14 +45,26 @@ export function SetupAuditModal({ row, settings, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6 backdrop-blur"
+      className={`fixed inset-0 z-50 flex items-end justify-center bg-slate-950/80 backdrop-blur transition-opacity duration-300 ease-spring sm:items-center sm:px-4 sm:py-6 ${
+        shown ? "opacity-100" : "opacity-0"
+      }`}
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Setup audit for ${row.ticker}`}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[calc(100vh-3rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl"
+        className={`flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-3xl border border-hairline bg-panel shadow-sheet transition-all duration-300 ease-spring sm:max-h-[calc(100vh-3rem)] sm:rounded-2xl sm:shadow-2xl ${
+          shown ? "translate-y-0 opacity-100 sm:scale-100" : "translate-y-full opacity-0 sm:translate-y-2 sm:opacity-0 sm:scale-95"
+        }`}
       >
-        <header className="flex flex-shrink-0 items-start justify-between border-b border-slate-800 bg-slate-950/60 px-6 py-4">
+        {/* Grab handle — bottom-sheet affordance on mobile only */}
+        <div className="flex justify-center pt-2.5 sm:hidden">
+          <span aria-hidden className="h-1 w-9 rounded-full bg-slate-700" />
+        </div>
+
+        <header className="flex flex-shrink-0 items-start justify-between border-b border-hairline/70 bg-slate-950/40 px-5 py-4 sm:px-6">
           <div>
             <p className="font-mono text-xs uppercase tracking-[0.3em] text-emerald-400">
               Setup Audit Log
@@ -46,9 +74,22 @@ export function SetupAuditModal({ row, settings, onClose }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded border border-slate-700 px-2 py-0.5 text-sm text-slate-300 hover:border-emerald-400 hover:text-emerald-300"
+            aria-label="Close"
+            className="flex h-11 w-11 items-center justify-center rounded-xl border border-hairline text-slate-300 transition-colors hover:border-emerald-400/50 hover:text-emerald-300"
           >
-            ✕
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-5 w-5"
+              aria-hidden
+            >
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
           </button>
         </header>
 

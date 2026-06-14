@@ -58,6 +58,16 @@ export function computeTpSl(entry: number, settings: StrategySettings) {
   };
 }
 
+// Risk-budget position sizing, mirroring the GMMA scanner: the number of whole
+// shares whose downside (entry → stop loss) consumes the per-trade risk budget.
+export function computePositionShares(entry: number, settings: StrategySettings): number {
+  const { targetSl } = computeTpSl(entry, settings);
+  const riskPerShare = entry - targetSl;
+  if (riskPerShare <= 0) return 0;
+  const riskBudget = settings.totalCapital * (settings.riskPerTradePct / 100);
+  return Math.floor(riskBudget / riskPerShare);
+}
+
 export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
