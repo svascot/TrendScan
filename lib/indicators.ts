@@ -94,6 +94,51 @@ export function ema(values: readonly number[], period: number): number | null {
   return e;
 }
 
+// Full EMA series aligned 1:1 with `values`. Entries before the seed window
+// (index < period - 1) are null. Seeded with the SMA of the first `period`
+// values, then smoothed forward — identical convention to `ema()` above, so the
+// final element equals `ema(values, period)`.
+export function emaSeries(values: readonly number[], period: number): (number | null)[] {
+  const out = new Array<number | null>(values.length).fill(null);
+  if (period <= 0 || values.length < period) return out;
+  const k = 2 / (period + 1);
+  let e = 0;
+  for (let i = 0; i < period; i++) e += values[i];
+  e /= period;
+  out[period - 1] = e;
+  for (let i = period; i < values.length; i++) {
+    e = values[i] * k + e * (1 - k);
+    out[i] = e;
+  }
+  return out;
+}
+
+// Full Awesome Oscillator series aligned 1:1 with the inputs, computed in one
+// pass with rolling SMA(5) and SMA(34) windows over the median price. Entries
+// before the 34-bar window is full (index < 33) are null.
+export function awesomeOscillatorSeries(
+  highs: readonly number[],
+  lows: readonly number[],
+): (number | null)[] {
+  const n = highs.length;
+  const out = new Array<number | null>(n).fill(null);
+  if (n !== lows.length || n < 34) return out;
+
+  const median = new Array<number>(n);
+  for (let i = 0; i < n; i++) median[i] = (highs[i] + lows[i]) / 2;
+
+  let sum5 = 0;
+  let sum34 = 0;
+  for (let i = 0; i < n; i++) {
+    sum5 += median[i];
+    sum34 += median[i];
+    if (i >= 5) sum5 -= median[i - 5];
+    if (i >= 34) sum34 -= median[i - 34];
+    if (i >= 33) out[i] = sum5 / 5 - sum34 / 34;
+  }
+  return out;
+}
+
 // Awesome Oscillator = SMA(median, 5) - SMA(median, 34), where median = (high + low) / 2.
 // Returns the previous and current AO values so the caller can confirm momentum
 // (curr > prev = "green bar" / rising AO). Returns null if not enough bars (needs 35).
