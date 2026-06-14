@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { computePositionShares, computeTpSl, type StrategySettings } from "@/lib/strategy";
 import { etoroLink, formatPrice } from "@/lib/format";
 import type { ScanResult } from "@/lib/scanner";
 import { SetupAuditModal } from "./SetupAuditModal";
+import { SetupDetailPanel } from "./SetupDetailPanel";
 
 interface ScanResponse {
   generatedAt: string;
@@ -16,6 +17,9 @@ interface ScanResponse {
   results: ScanResult[];
   skipped: number;
 }
+
+type Density = "comfortable" | "compact";
+type FlashDir = "up" | "down";
 
 const LIMIT_OPTIONS = [10, 20, 50, 100] as const;
 
@@ -28,9 +32,17 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
   const [addingTicker, setAddingTicker] = useState<string | null>(null);
   const [addedTickers, setAddedTickers] = useState<Set<string>>(new Set());
   const [auditRow, setAuditRow] = useState<ScanResult | null>(null);
+  const [selected, setSelected] = useState<ScanResult | null>(null);
   const [filters, setFilters] = useState({ sp500: true, nasdaq100: true });
   const [reloading, setReloading] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [density, setDensity] = useState<Density>("comfortable");
+
+  // Live price-flash tracking: remember the last close we rendered per ticker so
+  // a refresh can briefly tint the number green (up) or red (down) before easing
+  // back to neutral — the institutional "tape" effect, no harsh blinking.
+  const prevPricesRef = useRef<Map<string, number>>(new Map());
+  const [flashes, setFlashes] = useState<Map<string, FlashDir>>(new Map());
 
   async function hardReload() {
     if (reloading) return;
@@ -98,6 +110,31 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
     return () => clearInterval(id);
   }, [limit, fetchScan, refreshMinutes]);
 
+  // Diff incoming closes against the previous render → drive the price-flash tint.
+  useEffect(() => {
+    if (!data) return;
+    const prev = prevPricesRef.current;
+    const next = new Map<string, FlashDir>();
+    for (const r of data.results) {
+      const last = prev.get(r.ticker);
+      if (last !== undefined && last !== r.close) {
+        next.set(r.ticker, r.close > last ? "up" : "down");
+      }
+      prev.set(r.ticker, r.close);
+    }
+    if (next.size === 0) return;
+    setFlashes(next);
+    const id = setTimeout(() => setFlashes(new Map()), 450);
+    return () => clearTimeout(id);
+  }, [data]);
+
+  // Keep the open detail panel in sync with refreshed data (live price/score).
+  useEffect(() => {
+    if (!selected || !data) return;
+    const fresh = data.results.find((r) => r.ticker === selected.ticker);
+    if (fresh && fresh !== selected) setSelected(fresh);
+  }, [data, selected]);
+
   async function onAdd(r: ScanResult) {
     setAddingTicker(r.ticker);
     try {
@@ -131,93 +168,100 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
     });
   }, [data]);
 
-  return (
-    <div className="space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-800 pb-4">
-        <div>
-          <p className="font-mono text-xs uppercase tracking-[0.3em] text-emerald-400">
-            Daily Scanner Report
-          </p>
-          <h1 className="mt-2 text-xl font-semibold text-slate-50 sm:text-2xl">
-            Market Universe: S&amp;P 500 &amp; Nasdaq 100
-          </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Showing the absolute highest-ranked mathematical setups.
-          </p>
-          {generated && (
-            <p className="mt-1 text-xs text-slate-500">
-              <span className={loading ? "text-emerald-300" : ""}>
-                {loading ? "Refreshing…" : `Last updated at ${generated}`}
-              </span>
-              <span className="ml-2 text-slate-600">
-                · auto-refresh every {settings.refreshIntervalMinutes} min
-              </span>
-            </p>
-          )}
-        </div>
+  const detailOpen = selected !== null;
+  const rowPadY = density === "compact" ? "py-2.5" : "py-3.5";
 
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            onClick={hardReload}
-            disabled={reloading}
-            aria-label="Hard reload (bypass cache)"
-            title="Hard reload (bypass cache)"
-            className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-800 text-slate-300 transition hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-60"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={`h-4 w-4 ${reloading ? "animate-spin" : ""}`}
-              aria-hidden
-            >
-              <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
-              <path d="M21 3v5h-5" />
-              <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
-              <path d="M3 21v-5h5" />
-            </svg>
-          </button>
-          <div className="flex items-center gap-2">
-            <IndexToggle
-              label="S&P 500"
-              active={filters.sp500}
-              lastActive={filters.sp500 && !filters.nasdaq100}
-              onClick={() => toggleFilter("sp500")}
-            />
-            <IndexToggle
-              label="Nasdaq-100"
-              active={filters.nasdaq100}
-              lastActive={filters.nasdaq100 && !filters.sp500}
-              onClick={() => toggleFilter("nasdaq100")}
-            />
-          </div>
-          <label className="font-mono text-xs uppercase tracking-widest text-slate-400">
-            Show
-          </label>
-          <select
-            value={limit}
-            onChange={(e) => setLimit(parseInt(e.target.value, 10))}
-            className="rounded-md border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-400"
-          >
-            {LIMIT_OPTIONS.map((n) => (
-              <option key={n} value={n}>Top {n}</option>
-            ))}
-          </select>
-        </div>
+  return (
+    <div className="space-y-5">
+      {/* ───────── Title block (scrolls away) ───────── */}
+      <header className="space-y-2">
+        <p className="font-mono text-xs uppercase tracking-[0.3em] text-emerald-400">
+          Daily Scanner Report
+        </p>
+        <h1 className="text-xl font-semibold tracking-tight text-slate-50 sm:text-2xl">
+          Market Universe: S&amp;P 500 &amp; Nasdaq 100
+        </h1>
+        <p className="text-sm text-slate-400">
+          Showing the absolute highest-ranked mathematical setups.
+        </p>
       </header>
 
+      {/* ───────── Sticky glassmorphism control bar ─────────
+          Bleeds to the column edges via -mx and re-pads its content, so the
+          translucent macOS-style layer spans the full width when pinned. */}
+      <div className="sticky top-[68px] z-30 -mx-4 border-b border-slate-900 bg-slate-950/75 px-4 py-3 backdrop-blur-md sm:-mx-6 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+          <div className="flex min-h-[20px] items-center gap-2 text-xs">
+            <span
+              aria-hidden
+              className={`h-1.5 w-1.5 rounded-full transition-colors ${
+                loading ? "animate-pulse bg-emerald-400" : "bg-emerald-500/60"
+              }`}
+            />
+            {generated ? (
+              <span className="text-slate-400">
+                <span className={loading ? "text-emerald-300" : "text-slate-300"}>
+                  {loading ? "Refreshing…" : `Updated ${generated}`}
+                </span>
+                <span className="ml-2 hidden text-slate-600 sm:inline">
+                  · auto every {settings.refreshIntervalMinutes} min
+                </span>
+              </span>
+            ) : (
+              <span className="text-slate-500">Initializing scanner…</span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-2">
+              <IndexToggle
+                label="S&P 500"
+                active={filters.sp500}
+                lastActive={filters.sp500 && !filters.nasdaq100}
+                onClick={() => toggleFilter("sp500")}
+              />
+              <IndexToggle
+                label="Nasdaq-100"
+                active={filters.nasdaq100}
+                lastActive={filters.nasdaq100 && !filters.sp500}
+                onClick={() => toggleFilter("nasdaq100")}
+              />
+            </div>
+
+            <DensityToggle value={density} onChange={setDensity} />
+
+            <select
+              value={limit}
+              onChange={(e) => setLimit(parseInt(e.target.value, 10))}
+              aria-label="Number of setups to show"
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 outline-none transition focus:border-emerald-400"
+            >
+              {LIMIT_OPTIONS.map((n) => (
+                <option key={n} value={n}>Top {n}</option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={hardReload}
+              disabled={reloading}
+              aria-label="Hard reload (bypass cache)"
+              title="Hard reload (bypass cache)"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-800 text-slate-400 transition hover:border-emerald-500/40 hover:text-emerald-300 disabled:opacity-60"
+            >
+              <RefreshIcon className={`h-4 w-4 ${reloading ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+        </div>
+      </div>
+
       {error && (
-        <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
           {error}
         </div>
       )}
 
-      {/* Mobile card layout — progressive disclosure */}
+      {/* ───────── Mobile card layout — progressive disclosure ───────── */}
       <div className="space-y-3 md:hidden">
         {loading && !data && (
           <div className="rounded-2xl border border-hairline/60 bg-panel/50 px-4 py-10 text-center text-sm text-slate-400">
@@ -259,9 +303,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
                   <span className="text-base font-semibold tracking-tight text-slate-50">
                     {r.ticker}
                   </span>
-                  <span className="font-mono text-base tabular-nums text-slate-100">
-                    {formatPrice(r.close)}
-                  </span>
+                  <PriceText value={r.close} flash={flashes.get(r.ticker)} className="text-base" />
                 </div>
 
                 {/* Middle line — momentum badge + position size */}
@@ -344,90 +386,130 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
         })}
       </div>
 
-      {/* Desktop table layout */}
-      <div className="hidden overflow-hidden rounded-2xl border border-hairline/60 bg-panel/50 shadow-panel md:block">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-hairline/70 bg-slate-950/50 text-xs uppercase tracking-wider text-slate-400">
-            <tr>
-              <th className="px-4 py-3">Ticker</th>
-              <th className="px-4 py-3 text-right">Price</th>
-              <th className="px-4 py-3 text-right">Momentum Score</th>
-              <th className="px-4 py-3 text-right">Target TP</th>
-              <th className="px-4 py-3 text-right">Target SL</th>
-              <th className="px-4 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && !data && (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
-                  <span className="inline-flex items-center gap-3">
-                    <span
-                      aria-hidden
-                      className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400"
-                    />
-                    Running scanner across ~600 tickers — this can take 5–10 seconds…
-                  </span>
-                </td>
-              </tr>
-            )}
-            {!loading && data && filteredStocks.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
-                  No setups passed all four rules today. The market may be overextended or
-                  consolidating. Re-check tomorrow.
-                </td>
-              </tr>
-            )}
-            {filteredStocks.map((r) => {
-              const { targetTp, targetSl } = computeTpSl(r.close, settings);
-              const added = addedTickers.has(r.ticker);
-              return (
-                <tr key={r.ticker} className="border-b border-hairline/50 last:border-b-0 hover:bg-slate-800/20">
-                  <td className="px-4 py-3">
-                    <a
-                      href={etoroLink(r.ticker)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono font-semibold text-emerald-400 hover:underline"
-                    >
-                      {r.ticker}
-                    </a>
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-100">{formatPrice(r.close)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <ScoreCell score={r.score} tier={r.tier} />
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono tabular-nums text-emerald-300">{formatPrice(targetTp)}</td>
-                  <td className="px-4 py-3 text-right font-mono tabular-nums text-red-300">{formatPrice(targetSl)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setAuditRow(r)}
-                        className="rounded border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:border-emerald-400 hover:text-emerald-300"
-                      >
-                        Info
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onAdd(r)}
-                        disabled={addingTicker === r.ticker || added}
-                        className={`rounded px-2.5 py-1 text-xs font-medium transition ${
-                          added
-                            ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                            : "border border-emerald-500/40 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
-                        } disabled:opacity-60`}
-                      >
-                        {added ? "Added" : addingTicker === r.ticker ? "Adding…" : "+ Add"}
-                      </button>
-                    </div>
-                  </td>
+      {/* ───────── Desktop master-detail split (md+) ───────── */}
+      <div className="hidden md:flex md:items-start md:gap-5">
+        <div
+          className={`min-w-0 transition-all duration-300 ease-spring ${
+            detailOpen ? "md:w-[63%]" : "md:w-full"
+          }`}
+        >
+          <div className="overflow-hidden rounded-2xl border border-slate-800/60 bg-panel/50 shadow-panel">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-800/70 bg-slate-950/50 text-xs uppercase tracking-wider text-slate-400">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Ticker</th>
+                  <th className="px-4 py-3 text-right font-medium">Price</th>
+                  <th className="px-4 py-3 text-right font-medium">Momentum Score</th>
+                  {!detailOpen && (
+                    <>
+                      <th className="px-4 py-3 text-right font-medium">Target TP</th>
+                      <th className="px-4 py-3 text-right font-medium">Target SL</th>
+                    </>
+                  )}
+                  <th className="px-4 py-3 text-right font-medium">Actions</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {loading && !data && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
+                      <span className="inline-flex items-center gap-3">
+                        <span
+                          aria-hidden
+                          className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400"
+                        />
+                        Running scanner across ~600 tickers — this can take 5–10 seconds…
+                      </span>
+                    </td>
+                  </tr>
+                )}
+                {!loading && data && filteredStocks.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
+                      No setups passed all four rules today. The market may be overextended or
+                      consolidating. Re-check tomorrow.
+                    </td>
+                  </tr>
+                )}
+                {filteredStocks.map((r) => {
+                  const { targetTp, targetSl } = computeTpSl(r.close, settings);
+                  const added = addedTickers.has(r.ticker);
+                  const isSelected = selected?.ticker === r.ticker;
+                  return (
+                    <tr
+                      key={r.ticker}
+                      onClick={() => setSelected(r)}
+                      aria-selected={isSelected}
+                      className={`group cursor-pointer border-b border-slate-800/40 transition-colors last:border-b-0 ${
+                        isSelected ? "bg-emerald-500/[0.06]" : "hover:bg-slate-800/20"
+                      }`}
+                    >
+                      {/* First cell carries the surgical emerald hover/selection indicator */}
+                      <td className={`relative px-4 ${rowPadY}`}>
+                        <span
+                          aria-hidden
+                          className={`absolute left-0 top-1/2 h-[55%] w-[2px] -translate-y-1/2 rounded-full bg-emerald-400 transition-all duration-200 ${
+                            isSelected
+                              ? "opacity-100"
+                              : "opacity-0 group-hover:opacity-100"
+                          }`}
+                        />
+                        <a
+                          href={etoroLink(r.ticker)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-mono font-semibold text-emerald-400 hover:underline"
+                        >
+                          {r.ticker}
+                        </a>
+                      </td>
+                      <td className={`px-4 text-right ${rowPadY}`}>
+                        <PriceText value={r.close} flash={flashes.get(r.ticker)} />
+                      </td>
+                      <td className={`px-4 text-right ${rowPadY}`}>
+                        <ScoreCell score={r.score} tier={r.tier} />
+                      </td>
+                      {!detailOpen && (
+                        <>
+                          <td className={`px-4 text-right font-mono tabular-nums text-emerald-300 ${rowPadY}`}>
+                            {formatPrice(targetTp)}
+                          </td>
+                          <td className={`px-4 text-right font-mono tabular-nums text-red-300 ${rowPadY}`}>
+                            {formatPrice(targetSl)}
+                          </td>
+                        </>
+                      )}
+                      <td className={`px-4 text-right ${rowPadY}`}>
+                        <div className="flex justify-end">
+                          <span onClick={(e) => e.stopPropagation()}>
+                            <AddButton
+                              added={added}
+                              adding={addingTicker === r.ticker}
+                              onClick={() => onAdd(r)}
+                            />
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Right master-detail panel — slides in beside the list */}
+        {selected && (
+          <div className="hidden w-[37%] flex-shrink-0 md:block">
+            <SetupDetailPanel
+              key={selected.ticker}
+              row={selected}
+              settings={settings}
+              onClose={() => setSelected(null)}
+            />
+          </div>
+        )}
       </div>
 
       <p className="text-xs text-slate-500">
@@ -437,6 +519,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
         <a href="/settings" className="text-emerald-400 hover:underline" onClick={(e) => { e.preventDefault(); router.push("/settings"); }}>Settings</a>.
       </p>
 
+      {/* Mobile-only intrusive sheet (desktop uses the master-detail panel) */}
       {auditRow && (
         <SetupAuditModal
           row={auditRow}
@@ -466,7 +549,7 @@ function IndexToggle({
       aria-checked={active}
       aria-disabled={lastActive}
       onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition ${
+      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition ${
         active
           ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
           : "border-slate-700 bg-slate-950 text-slate-400 hover:border-slate-600 hover:text-slate-200"
@@ -478,6 +561,45 @@ function IndexToggle({
       />
       {label}
     </button>
+  );
+}
+
+function DensityToggle({
+  value,
+  onChange,
+}: {
+  value: Density;
+  onChange: (d: Density) => void;
+}) {
+  const options: { key: Density; label: string }[] = [
+    { key: "comfortable", label: "Comfortable" },
+    { key: "compact", label: "Compact" },
+  ];
+  return (
+    <div
+      role="group"
+      aria-label="Row density"
+      className="hidden items-center rounded-lg border border-slate-800 bg-slate-950 p-0.5 lg:inline-flex"
+    >
+      {options.map((o) => {
+        const active = value === o.key;
+        return (
+          <button
+            key={o.key}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(o.key)}
+            className={`rounded-md px-2.5 py-1 text-xs font-medium transition ${
+              active
+                ? "bg-slate-800 text-slate-100"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -500,6 +622,69 @@ function ScoreCell({ score, tier }: { score: number; tier: "High" | "Med" | "Low
   );
 }
 
+/**
+ * Numeric price with a brief directional tint on change. Tabular figures keep
+ * the column from jittering; the 500ms color transition lets the green/red
+ * flash decay smoothly back to neutral instead of hard-blinking.
+ */
+function PriceText({
+  value,
+  flash,
+  className = "",
+}: {
+  value: number;
+  flash?: FlashDir;
+  className?: string;
+}) {
+  const color =
+    flash === "up" ? "text-emerald-400" : flash === "down" ? "text-red-400" : "text-slate-100";
+  return (
+    <span className={`font-mono tabular-nums transition-colors duration-500 ${color} ${className}`}>
+      {formatPrice(value)}
+    </span>
+  );
+}
+
+/**
+ * Minimalist quick-add control. A thin Lucide-style plus that morphs into an
+ * emerald confirmation badge once the position is staged.
+ */
+function AddButton({
+  added,
+  adding,
+  onClick,
+}: {
+  added: boolean;
+  adding: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={adding || added}
+      aria-label={added ? "Added to portfolio" : "Add to portfolio"}
+      className={`group/add inline-flex items-center gap-1.5 overflow-hidden rounded-lg border px-2.5 py-1 text-xs font-medium transition-all duration-300 ease-spring disabled:cursor-default ${
+        added
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+          : "border-slate-800 text-slate-400 hover:border-emerald-500/40 hover:text-emerald-300"
+      }`}
+    >
+      {added ? (
+        <CheckIcon className="h-3.5 w-3.5" />
+      ) : adding ? (
+        <span
+          aria-hidden
+          className="h-3.5 w-3.5 animate-spin rounded-full border-[1.5px] border-slate-700 border-t-emerald-400"
+        />
+      ) : (
+        <PlusIcon className="h-3.5 w-3.5" />
+      )}
+      <span>{added ? "Added" : adding ? "Adding" : "Add"}</span>
+    </button>
+  );
+}
+
 function Chevron({ open }: { open: boolean }) {
   return (
     <svg
@@ -516,6 +701,63 @@ function Chevron({ open }: { open: boolean }) {
       }`}
     >
       <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function PlusIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={className}
+    >
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+function CheckIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className={className}
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+function RefreshIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
+      <path d="M21 3v5h-5" />
+      <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
+      <path d="M3 21v-5h5" />
     </svg>
   );
 }

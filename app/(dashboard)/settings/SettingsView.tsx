@@ -123,7 +123,7 @@ export function SettingsView({ initial }: Props) {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="space-y-6">
       <header className="border-b border-slate-800 pb-4">
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-emerald-400">
           Your Strategy
