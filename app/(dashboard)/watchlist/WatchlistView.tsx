@@ -6,6 +6,7 @@ import { computeTpSl, type StrategySettings } from "@/lib/strategy";
 import { etoroLink, formatPrice } from "@/lib/format";
 import type { ScanResult } from "@/lib/scanner";
 import { SetupAuditModal } from "../scanner/SetupAuditModal";
+import { SetupDetailPanel } from "../scanner/SetupDetailPanel";
 
 interface ScanResponse {
   generatedAt: string;
@@ -38,6 +39,7 @@ export function WatchlistView({ settings }: { settings: StrategySettings }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [auditRow, setAuditRow] = useState<ScanResult | null>(null);
+  const [selected, setSelected] = useState<ScanResult | null>(null);
   const [removingTicker, setRemovingTicker] = useState<string | null>(null);
 
   const [query, setQuery] = useState("");
@@ -131,10 +133,21 @@ export function WatchlistView({ settings }: { settings: StrategySettings }) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
+  // Keep the open detail panel in sync with refreshed data; close it if the
+  // selected ticker is no longer in the list (e.g. removed).
+  useEffect(() => {
+    if (!selected || !data) return;
+    const fresh = data.results.find((r) => r.ticker === selected.ticker);
+    if (!fresh) setSelected(null);
+    else if (fresh !== selected) setSelected(fresh);
+  }, [data, selected]);
+
   const existingTickers = useMemo(
     () => new Set((data?.results ?? []).map((r) => r.ticker.toUpperCase())),
     [data],
   );
+
+  const detailOpen = selected !== null;
 
   function resolveSubmission(): Suggestion | null {
     const q = query.trim().toUpperCase();
@@ -356,7 +369,16 @@ export function WatchlistView({ settings }: { settings: StrategySettings }) {
           return (
             <article
               key={r.ticker}
-              className="rounded-xl border border-slate-800 bg-slate-900/40 p-4"
+              role="button"
+              tabIndex={0}
+              onClick={() => setAuditRow(r)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setAuditRow(r);
+                }
+              }}
+              className="cursor-pointer rounded-xl border border-slate-800 bg-slate-900/40 p-4 transition-colors hover:border-emerald-500/30"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -364,6 +386,7 @@ export function WatchlistView({ settings }: { settings: StrategySettings }) {
                     href={etoroLink(r.ticker)}
                     target="_blank"
                     rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
                     className="font-mono text-lg font-semibold text-emerald-400 hover:underline"
                   >
                     {r.ticker}
@@ -403,14 +426,10 @@ export function WatchlistView({ settings }: { settings: StrategySettings }) {
               <div className="mt-4 flex gap-2">
                 <button
                   type="button"
-                  onClick={() => setAuditRow(r)}
-                  className="flex-1 rounded-md border border-slate-700 px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
-                >
-                  Info
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onRemove(r.ticker)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(r.ticker);
+                  }}
                   disabled={removingTicker === r.ticker}
                   aria-label={`Remove ${r.ticker}`}
                   className="flex-1 rounded-md border border-slate-700 px-3 py-2 text-xs font-medium text-slate-400 transition hover:border-red-500/60 hover:text-red-300 disabled:opacity-50"
@@ -423,92 +442,130 @@ export function WatchlistView({ settings }: { settings: StrategySettings }) {
         })}
       </div>
 
-      {/* Desktop table layout */}
-      <div className="hidden overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40 md:block">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-800 bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400">
-            <tr>
-              <th className="px-4 py-3">Ticker</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Price</th>
-              <th className="px-4 py-3 text-right">Momentum Score</th>
-              <th className="px-4 py-3 text-right">Target TP</th>
-              <th className="px-4 py-3 text-right">Target SL</th>
-              <th className="px-4 py-3 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && !data && (
-              <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
-                  Loading your watchlist…
-                </td>
-              </tr>
-            )}
-            {!loading && data && stocks.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
-                  Your watchlist is empty. Type a ticker or company name above to add one.
-                </td>
-              </tr>
-            )}
-            {stocks.map((r) => {
-              const { targetTp, targetSl } = computeTpSl(r.close, settings);
-              const passing = isTrendPassing(r);
-              return (
-                <tr key={r.ticker} className="border-b border-slate-800/60 last:border-b-0 hover:bg-slate-800/30">
-                  <td className="px-4 py-3">
-                    <a
-                      href={etoroLink(r.ticker)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono font-semibold text-emerald-400 hover:underline"
-                    >
-                      {r.ticker}
-                    </a>
-                  </td>
-                  <td className="px-4 py-3">
-                    {passing ? (
-                      <span className="inline-flex items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-300">
-                        Setup Active
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-red-300">
-                        No Setup · Trend Filter Failed
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-slate-100">{formatPrice(r.close)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <ScoreCell score={r.score} tier={r.tier} dimmed={!passing} />
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono text-emerald-300">{formatPrice(targetTp)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-red-300">{formatPrice(targetSl)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setAuditRow(r)}
-                        className="rounded border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:border-emerald-400 hover:text-emerald-300"
-                      >
-                        Info
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onRemove(r.ticker)}
-                        disabled={removingTicker === r.ticker}
-                        aria-label={`Remove ${r.ticker}`}
-                        className="rounded border border-slate-700 px-2.5 py-1 text-xs text-slate-400 transition hover:border-red-500/60 hover:text-red-300 disabled:opacity-50"
-                      >
-                        {removingTicker === r.ticker ? "Removing…" : "Remove"}
-                      </button>
-                    </div>
-                  </td>
+      {/* Desktop master-detail split (md+) */}
+      <div className="hidden md:flex md:items-start md:gap-5">
+        <div
+          className={`min-w-0 transition-all duration-300 ease-spring ${
+            detailOpen ? "md:w-[63%]" : "md:w-full"
+          }`}
+        >
+          <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-800 bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">Ticker</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Price</th>
+                  <th className="px-4 py-3 text-right">Momentum Score</th>
+                  {!detailOpen && (
+                    <>
+                      <th className="px-4 py-3 text-right">Target TP</th>
+                      <th className="px-4 py-3 text-right">Target SL</th>
+                    </>
+                  )}
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {loading && !data && (
+                  <tr>
+                    <td colSpan={detailOpen ? 5 : 7} className="px-4 py-12 text-center text-slate-400">
+                      Loading your watchlist…
+                    </td>
+                  </tr>
+                )}
+                {!loading && data && stocks.length === 0 && (
+                  <tr>
+                    <td colSpan={detailOpen ? 5 : 7} className="px-4 py-12 text-center text-slate-400">
+                      Your watchlist is empty. Type a ticker or company name above to add one.
+                    </td>
+                  </tr>
+                )}
+                {stocks.map((r) => {
+                  const { targetTp, targetSl } = computeTpSl(r.close, settings);
+                  const passing = isTrendPassing(r);
+                  const isSelected = selected?.ticker === r.ticker;
+                  return (
+                    <tr
+                      key={r.ticker}
+                      onClick={() => setSelected(r)}
+                      aria-selected={isSelected}
+                      className={`group cursor-pointer border-b border-slate-800/60 transition-colors last:border-b-0 ${
+                        isSelected ? "bg-emerald-500/[0.06]" : "hover:bg-slate-800/30"
+                      }`}
+                    >
+                      <td className="relative px-4 py-3">
+                        <span
+                          aria-hidden
+                          className={`absolute left-0 top-1/2 h-[55%] w-[2px] -translate-y-1/2 rounded-full bg-emerald-400 transition-all duration-200 ${
+                            isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                          }`}
+                        />
+                        <a
+                          href={etoroLink(r.ticker)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-mono font-semibold text-emerald-400 hover:underline"
+                        >
+                          {r.ticker}
+                        </a>
+                      </td>
+                      <td className="px-4 py-3">
+                        {passing ? (
+                          <span className="inline-flex items-center rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-emerald-300">
+                            Setup Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] uppercase tracking-wider text-red-300">
+                            No Setup · Trend Filter Failed
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-100">{formatPrice(r.close)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <ScoreCell score={r.score} tier={r.tier} dimmed={!passing} />
+                      </td>
+                      {!detailOpen && (
+                        <>
+                          <td className="px-4 py-3 text-right font-mono text-emerald-300">{formatPrice(targetTp)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-red-300">{formatPrice(targetSl)}</td>
+                        </>
+                      )}
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-2">
+                          <span onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => onRemove(r.ticker)}
+                              disabled={removingTicker === r.ticker}
+                              aria-label={`Remove ${r.ticker}`}
+                              className="rounded border border-slate-700 px-2.5 py-1 text-xs text-slate-400 transition hover:border-red-500/60 hover:text-red-300 disabled:opacity-50"
+                            >
+                              {removingTicker === r.ticker ? "Removing…" : "Remove"}
+                            </button>
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Right master-detail panel — slides in beside the list */}
+        {selected && (
+          <div className="hidden w-[37%] flex-shrink-0 md:block">
+            <SetupDetailPanel
+              key={selected.ticker}
+              row={selected}
+              settings={settings}
+              onClose={() => setSelected(null)}
+            />
+          </div>
+        )}
       </div>
 
       <p className="text-xs text-slate-500">
