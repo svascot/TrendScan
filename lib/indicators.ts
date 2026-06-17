@@ -167,3 +167,21 @@ export function awesomeOscillator(
 
   return { prev, curr };
 }
+
+// Bullish Awesome Oscillator "saucer": three consecutive bars ABOVE the zero
+// line where the middle bar is the trough — a red bar, a smaller red bar, then a
+// green bar (a > b && c > b). `ao3` is the last three AO values, oldest first.
+// This is one of Bill Williams' canonical AO entry triggers and is far stronger
+// than a single rising bar. Returns false on null/short input.
+export function aoBullishSaucer(ao3: readonly (number | null)[]): boolean {
+  if (ao3.length < 3) return false;
+  const [a, b, c] = ao3.slice(-3);
+  if (a === null || b === null || c === null) return false;
+  return a > 0 && b > 0 && c > 0 && a > b && c > b;
+}
+
+// Awesome Oscillator zero-line cross to the upside: the prior bar was at/below
+// zero and the current bar is above it — momentum flipping bullish.
+export function aoZeroCrossUp(prev: number, curr: number): boolean {
+  return prev <= 0 && curr > 0;
+}

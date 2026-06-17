@@ -130,10 +130,10 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
             GMMA Momentum Report
           </p>
           <h1 className="mt-2 text-xl font-semibold text-slate-50 sm:text-2xl">
-            Guppy Fan (30/35/40/45/50/60) + Awesome Oscillator
+            Guppy Dual Ribbon (3–15 / 30–60) + Awesome Oscillator
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Structural stop loss + dynamic 1:2 risk:reward. Position size is computed for your{" "}
+            ATR(1.5×) stop + dynamic 1:2 risk:reward. Position size is computed for your{" "}
             <span className="text-emerald-300">{settings.riskPerTradePct.toFixed(2)}% risk</span> per trade on a{" "}
             <span className="text-emerald-300">${settings.totalCapital.toLocaleString()}</span> account.
             {settings.brokerFeeUsd > 0 && (

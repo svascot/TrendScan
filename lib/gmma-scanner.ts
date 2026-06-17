@@ -1,5 +1,7 @@
 import {
-  awesomeOscillator,
+  aoBullishSaucer,
+  aoZeroCrossUp,
+  atr,
   awesomeOscillatorSeries,
   ema,
   emaSeries,
@@ -7,12 +9,21 @@ import {
 import { type DailyBar } from "./scanner";
 import { getIndicesFor, type IndexName } from "./universe";
 
-// Per-bar chart series for the GMMA detail panel: close + the 6 Guppy EMAs +
-// the Awesome Oscillator, all aligned to the same date. EMA/AO fields are null
-// during their warm-up window so the chart can gap them cleanly.
+// Per-bar chart series for the GMMA detail panel: close + both Guppy ribbons
+// (short 3-15 + long 30-60) + the Awesome Oscillator, all aligned to the same
+// date. EMA/AO fields are null during their warm-up window so the chart can gap
+// them cleanly.
 export interface GmmaChartBar {
   date: string; // YYYY-MM-DD
   close: number;
+  // Short-term (trader) ribbon.
+  ema3: number | null;
+  ema5: number | null;
+  ema8: number | null;
+  ema10: number | null;
+  ema12: number | null;
+  ema15: number | null;
+  // Long-term (investor) ribbon.
   ema30: number | null;
   ema35: number | null;
   ema40: number | null;
@@ -23,15 +34,26 @@ export interface GmmaChartBar {
 }
 
 export interface GmmaBreakdown {
-  rule1FanOrderedPass: boolean; // EMA30 > EMA35 > EMA40 > EMA45 > EMA50 > EMA60
-  rule2PriceInChannelPass: boolean; // EMA60 <= close <= EMA30
-  rule3MomentumPass: boolean; // AO curr > AO prev
+  // Short ribbon fully above the long ribbon, long ribbon ordered (true GMMA uptrend).
+  rule1TrendAlignedPass: boolean;
+  // Price has pulled back into the short ribbon while the uptrend holds.
+  rule2PullbackToShortRibbonPass: boolean;
+  // AO confirms via a bullish saucer or a zero-line cross up.
+  rule3AoConfirmedPass: boolean;
   riskPerSharePositive: boolean; // close > targetSl
 }
 
 export interface GmmaScanResult {
   ticker: string;
   close: number;
+  // Short-term (trader) ribbon, fast → slow.
+  ema3: number;
+  ema5: number;
+  ema8: number;
+  ema10: number;
+  ema12: number;
+  ema15: number;
+  // Long-term (investor) ribbon, fast → slow.
   ema30: number;
   ema35: number;
   ema40: number;
@@ -40,6 +62,7 @@ export interface GmmaScanResult {
   ema60: number;
   aoPrev: number;
   aoCurr: number;
+  atr14: number; // ATR(14) used to size the stop
   targetTp: number; // absolute $
   targetSl: number; // absolute $
   riskPerShare: number; // close - targetSl
@@ -50,8 +73,11 @@ export interface GmmaScanResult {
 }
 
 const CHART_BARS_LOOKBACK = 90;
-const EMA_PERIODS = [30, 35, 40, 45, 50, 60] as const;
-const MIN_BARS = 60; // need EMA(60) seed + AO(34); 60 closes is the binding minimum
+const SHORT_PERIODS = [3, 5, 8, 10, 12, 15] as const; // trader ribbon
+const LONG_PERIODS = [30, 35, 40, 45, 50, 60] as const; // investor ribbon
+const ATR_PERIOD = 14;
+const ATR_STOP_MULT = 1.5; // SL = close - 1.5 × ATR(14)
+const MIN_BARS = 60; // EMA(60) seed is the binding minimum; short ribbon + AO + ATR need fewer
 
 // Build the enriched chart series for the last ~90 bars. The EMA/AO series are
 // computed over the FULL history first (so values inside the lookback window are
@@ -62,6 +88,12 @@ function buildGmmaChartBars(
   highs: readonly number[],
   lows: readonly number[],
 ): GmmaChartBar[] {
+  const s3 = emaSeries(closes, 3);
+  const s5 = emaSeries(closes, 5);
+  const s8 = emaSeries(closes, 8);
+  const s10 = emaSeries(closes, 10);
+  const s12 = emaSeries(closes, 12);
+  const s15 = emaSeries(closes, 15);
   const s30 = emaSeries(closes, 30);
   const s35 = emaSeries(closes, 35);
   const s40 = emaSeries(closes, 40);
@@ -76,6 +108,12 @@ function buildGmmaChartBars(
     out.push({
       date: bars[i].t.slice(0, 10),
       close: round2(bars[i].c),
+      ema3: round2OrNull(s3[i]),
+      ema5: round2OrNull(s5[i]),
+      ema8: round2OrNull(s8[i]),
+      ema10: round2OrNull(s10[i]),
+      ema12: round2OrNull(s12[i]),
+      ema15: round2OrNull(s15[i]),
       ema30: round2OrNull(s30[i]),
       ema35: round2OrNull(s35[i]),
       ema40: round2OrNull(s40[i]),
@@ -99,26 +137,42 @@ export function evaluateGmmaTicker(
   const lows = bars.map((b) => b.l);
   const close = closes[closes.length - 1];
 
-  const emas = EMA_PERIODS.map((p) => ema(closes, p));
-  if (emas.some((e) => e === null)) return null;
-  const [e30, e35, e40, e45, e50, e60] = emas as number[];
+  const shortEmas = SHORT_PERIODS.map((p) => ema(closes, p));
+  const longEmas = LONG_PERIODS.map((p) => ema(closes, p));
+  if (shortEmas.some((e) => e === null) || longEmas.some((e) => e === null)) return null;
+  const [e3, e5, e8, e10, e12, e15] = shortEmas as number[];
+  const [e30, e35, e40, e45, e50, e60] = longEmas as number[];
 
-  const ao = awesomeOscillator(highs, lows);
-  if (!ao) return null;
+  // Awesome Oscillator — one series pass; curr/prev are simply its last two bars.
+  const aoSer = awesomeOscillatorSeries(highs, lows);
+  const aoCurr = aoSer[aoSer.length - 1];
+  const aoPrev = aoSer[aoSer.length - 2];
+  if (aoCurr === null || aoPrev === null) return null;
 
-  // ---- Filters ----
-  const rule1 = e30 > e35 && e35 > e40 && e40 > e45 && e45 > e50 && e50 > e60;
-  const rule2 = close >= e60 && close <= e30;
-  const rule3 = ao.curr > ao.prev;
+  // ---- Rule 1: true two-ribbon GMMA uptrend ----
+  // The long (investor) ribbon is ordered fast→slow, AND the short (trader)
+  // ribbon sits entirely above it — the canonical "short above long, fanning up".
+  const longOrdered = e30 > e35 && e35 > e40 && e40 > e45 && e45 > e50 && e50 > e60;
+  const shortMin = Math.min(e3, e5, e8, e10, e12, e15);
+  const longMax = Math.max(e30, e35, e40, e45, e50, e60);
+  const rule1 = longOrdered && shortMin > longMax;
+
+  // ---- Rule 2: pullback into the short ribbon, uptrend intact ----
+  // Price has eased back to the slow edge of the short ribbon (close ≤ EMA15)
+  // but is still above the whole investor ribbon (close > longMax).
+  const rule2 = close <= e15 && close > longMax;
+
+  // ---- Rule 3: AO confirmation (saucer or zero-line cross up) ----
+  const rule3 = aoBullishSaucer(aoSer) || aoZeroCrossUp(aoPrev, aoCurr);
 
   if (!(rule1 && rule2 && rule3)) return null;
 
-  // ---- Structural stop loss ----
-  // The tighter of two structural anchors: current EMA60 floor or the 5-bar swing low.
-  const last5Lows = lows.slice(-5);
-  let low5d = last5Lows[0];
-  for (let i = 1; i < last5Lows.length; i++) if (last5Lows[i] < low5d) low5d = last5Lows[i];
-  const targetSl = Math.max(e60, low5d);
+  // ---- ATR-based stop loss ----
+  // Volatility-aware stop gives normal pullback noise room to breathe, unlike a
+  // structural stop hugging the ribbon the entry just pulled back into.
+  const atr14 = atr(highs, lows, closes, ATR_PERIOD);
+  if (atr14 === null || atr14 <= 0) return null;
+  const targetSl = close - ATR_STOP_MULT * atr14;
 
   // SL must sit below the entry, otherwise position sizing is undefined.
   if (targetSl >= close) return null;
@@ -129,14 +183,21 @@ export function evaluateGmmaTicker(
   return {
     ticker,
     close: round2(close),
+    ema3: round2(e3),
+    ema5: round2(e5),
+    ema8: round2(e8),
+    ema10: round2(e10),
+    ema12: round2(e12),
+    ema15: round2(e15),
     ema30: round2(e30),
     ema35: round2(e35),
     ema40: round2(e40),
     ema45: round2(e45),
     ema50: round2(e50),
     ema60: round2(e60),
-    aoPrev: round4(ao.prev),
-    aoCurr: round4(ao.curr),
+    aoPrev: round4(aoPrev),
+    aoCurr: round4(aoCurr),
+    atr14: round2(atr14),
     targetTp: round2(targetTp),
     targetSl: round2(targetSl),
     riskPerShare: round2(riskPerShare),
@@ -144,9 +205,9 @@ export function evaluateGmmaTicker(
     indices: getIndicesFor(ticker),
     chartBars: buildGmmaChartBars(bars, closes, highs, lows),
     breakdown: {
-      rule1FanOrderedPass: rule1,
-      rule2PriceInChannelPass: rule2,
-      rule3MomentumPass: rule3,
+      rule1TrendAlignedPass: rule1,
+      rule2PullbackToShortRibbonPass: rule2,
+      rule3AoConfirmedPass: rule3,
       riskPerSharePositive: true,
     },
   };

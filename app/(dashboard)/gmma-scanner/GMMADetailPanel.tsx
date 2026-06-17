@@ -29,18 +29,32 @@ interface PanelProps {
 }
 
 // One Guppy ribbon line: its data key on the chart row + its colour.
+type RibbonKey = keyof Pick<
+  GmmaChartBar,
+  | "ema3" | "ema5" | "ema8" | "ema10" | "ema12" | "ema15"
+  | "ema30" | "ema35" | "ema40" | "ema45" | "ema50" | "ema60"
+>;
 interface RibbonLine {
-  key: keyof Pick<GmmaChartBar, "ema30" | "ema35" | "ema40" | "ema45" | "ema50" | "ema60">;
+  key: RibbonKey;
   label: string;
   color: string;
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Apple-style chromatic palette — short MAs in electric cyan/blue, transitioning
- * through teal into emerald for the medium/long ribbon so compression vs.
- * expansion of the fan reads at a glance.
+ * Two Guppy ribbons drawn as one fan: the short-term (trader) ribbon 3-15 in
+ * warm amber→gold, the long-term (investor) ribbon 30-60 in cool teal→emerald.
+ * The warm/cool split makes the canonical signal — short ribbon riding above the
+ * long ribbon, and their compression/expansion — read at a glance.
  * ──────────────────────────────────────────────────────────────────────────── */
-const RIBBON: readonly RibbonLine[] = [
+const SHORT_RIBBON: readonly RibbonLine[] = [
+  { key: "ema3", label: "MA3", color: "#fbbf24" },
+  { key: "ema5", label: "MA5", color: "#f59e0b" },
+  { key: "ema8", label: "MA8", color: "#f97316" },
+  { key: "ema10", label: "MA10", color: "#fb923c" },
+  { key: "ema12", label: "MA12", color: "#fdba74" },
+  { key: "ema15", label: "MA15", color: "#fcd34d" },
+] as const;
+const LONG_RIBBON: readonly RibbonLine[] = [
   { key: "ema30", label: "MA30", color: "#38bdf8" },
   { key: "ema35", label: "MA35", color: "#22d3ee" },
   { key: "ema40", label: "MA40", color: "#2dd4bf" },
@@ -48,6 +62,7 @@ const RIBBON: readonly RibbonLine[] = [
   { key: "ema50", label: "MA50", color: "#10b981" },
   { key: "ema60", label: "MA60", color: "#059669" },
 ] as const;
+const RIBBON: readonly RibbonLine[] = [...SHORT_RIBBON, ...LONG_RIBBON];
 
 const AO_GREEN = "#10b981";
 const AO_RED = "#ef4444";
@@ -275,21 +290,27 @@ function GmmaVerification({ row }: { row: GmmaScanResult }) {
       </h3>
       <ul className="mt-3 space-y-3.5">
         <VerificationItem
-          pass={breakdown.rule1FanOrderedPass}
-          title="Guppy Ribbon Alignment"
-          detail="Short to medium MAs are perfectly stacked and fanning upwards, confirming strong momentum acceleration."
+          pass={breakdown.rule1TrendAlignedPass}
+          title="Two-Ribbon GMMA Uptrend"
+          detail="The short (trader) ribbon 3–15 is riding entirely above the long (investor) ribbon 30–60, which is itself fanned upward — the canonical GMMA buy alignment."
         />
         <VerificationItem
-          pass={breakdown.rule2PriceInChannelPass}
-          title="Healthy Price Pullback"
-          detail="Current price is trading efficiently inside the compression canal (MA60 ≤ Close ≤ MA30), offering a low-risk entry."
+          pass={breakdown.rule2PullbackToShortRibbonPass}
+          title="Pullback to the Short Ribbon"
+          detail="Price has eased back into the trader ribbon (Close ≤ MA15) while staying above the whole investor ribbon, offering a low-risk continuation entry."
         />
         <VerificationItem
-          pass={breakdown.rule3MomentumPass}
-          title="Awesome Oscillator Momentum Shift"
-          detail="AO histogram has flipped to Green, signaling immediate institutional buying re-entry."
+          pass={breakdown.rule3AoConfirmedPass}
+          title="Awesome Oscillator Confirmation"
+          detail="AO confirms with a bullish saucer or a zero-line cross up — a multi-bar momentum signal, not a single green bar."
         />
       </ul>
+
+      <p className="mt-4 rounded-lg border border-hairline/60 bg-slate-950/40 px-3 py-2 text-xs leading-relaxed text-slate-400">
+        <span className="font-medium text-slate-300">Discretionary exit:</span>{" "}
+        close the position if the short ribbon crosses back below the long ribbon, or the
+        two ribbons compress together — the documented GMMA exit signal.
+      </p>
     </section>
   );
 }
@@ -378,14 +399,10 @@ function DetailBody({
 
       <GmmaDualChart bars={bars} large={large} />
 
-      {/* Ribbon legend */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        {RIBBON.map((r) => (
-          <span key={r.key} className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="h-0.5 w-4 rounded-full" style={{ backgroundColor: r.color }} />
-            <span className="font-mono text-[10px] tracking-wide text-slate-500">{r.label}</span>
-          </span>
-        ))}
+      {/* Ribbon legend — grouped into the two Guppy ribbons */}
+      <div className="space-y-1.5">
+        <RibbonLegendRow title="Short (trader) 3–15" lines={SHORT_RIBBON} />
+        <RibbonLegendRow title="Long (investor) 30–60" lines={LONG_RIBBON} />
       </div>
 
       <div className="border-t border-hairline/70 pt-5">
@@ -402,6 +419,20 @@ function DetailBody({
           <span className="font-mono text-slate-300">${formatPrice(row.riskPerShare)}</span> / share.
         </p>
       )}
+    </div>
+  );
+}
+
+function RibbonLegendRow({ title, lines }: { title: string; lines: readonly RibbonLine[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="font-mono text-[9px] uppercase tracking-widest text-slate-600">{title}</span>
+      {lines.map((r) => (
+        <span key={r.key} className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="h-0.5 w-4 rounded-full" style={{ backgroundColor: r.color }} />
+          <span className="font-mono text-[10px] tracking-wide text-slate-500">{r.label}</span>
+        </span>
+      ))}
     </div>
   );
 }
