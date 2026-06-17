@@ -20,9 +20,12 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
   const [addedTickers, setAddedTickers] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState({ sp500: true, nasdaq100: true });
   const [selected, setSelected] = useState<GmmaScanResult | null>(null);
+  // Session-only total-capital override, seeded from saved settings. Changing it
+  // recalculates sizing / P&L live but does not persist; reload resets to settings.
+  const [totalCapital, setTotalCapital] = useState<number>(settings.totalCapital);
 
   const refreshMinutes = Math.max(1, settings.refreshIntervalMinutes);
-  const riskUsd = settings.totalCapital * (settings.riskPerTradePct / 100);
+  const riskUsd = totalCapital * (settings.riskPerTradePct / 100);
 
   const toggleFilter = (key: "sp500" | "nasdaq100") => {
     setFilters((prev) => {
@@ -73,7 +76,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
     return () => clearInterval(id);
   }, [limit, fetchScan, refreshMinutes]);
 
-  async function onAdd(r: GmmaScanResult, targetTp: number) {
+  async function onAdd(r: GmmaScanResult, tp: number, sl: number) {
     setAddingTicker(r.ticker);
     try {
       const supabase = createClient();
@@ -83,8 +86,8 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
         user_id: userData.user.id,
         ticker: r.ticker,
         entry_price: r.close,
-        target_tp: targetTp,
-        target_sl: r.targetSl,
+        target_tp: tp,
+        target_sl: sl,
         status: "OPEN",
       });
       if (error) throw error;
@@ -116,10 +119,13 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
 
   const detailOpen = selected !== null;
   const selectedShares = selected
-    ? computeShares(riskUsd, selected.close, selected.targetSl, settings.totalCapital)
+    ? computeShares(riskUsd, selected.close, selected.targetSl, totalCapital)
     : 0;
   const selectedTp = selected
     ? feeAdjustedTp(selected.targetTp, settings.brokerFeeUsd, selectedShares)
+    : 0;
+  const selectedSlFee = selected
+    ? feeAdjustedSl(selected.targetSl, settings.brokerFeeUsd, selectedShares)
     : 0;
 
   return (
@@ -135,7 +141,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
           <p className="mt-1 text-sm text-slate-400">
             ATR(1.5×) stop + dynamic 1:2 risk:reward. Position size is computed for your{" "}
             <span className="text-emerald-300">{settings.riskPerTradePct.toFixed(2)}% risk</span> per trade on a{" "}
-            <span className="text-emerald-300">${settings.totalCapital.toLocaleString()}</span> account.
+            <span className="text-emerald-300">${totalCapital.toLocaleString()}</span> account.
             {settings.brokerFeeUsd > 0 && (
               <>
                 {" "}TP targets include your{" "}
@@ -170,6 +176,22 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
               onClick={() => toggleFilter("nasdaq100")}
             />
           </div>
+          <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-slate-400">
+            Capital&nbsp;$
+            <input
+              type="number"
+              min={0}
+              step="100"
+              value={totalCapital}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                setTotalCapital(Number.isFinite(v) && v >= 0 ? v : 0);
+              }}
+              aria-label="Total capital (USD)"
+              title="Total capital — overrides Settings for this session only"
+              className="w-28 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 outline-none focus:border-emerald-400"
+            />
+          </label>
           <label className="font-mono text-xs uppercase tracking-widest text-slate-400">
             Show
           </label>
@@ -200,8 +222,10 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
           </div>
         )}
         {filteredStocks.map((r) => {
-          const shares = computeShares(riskUsd, r.close, r.targetSl, settings.totalCapital);
-          const targetTp = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
+          const shares = computeShares(riskUsd, r.close, r.targetSl, totalCapital);
+          const tpFee = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
+          const slFee = feeAdjustedSl(r.targetSl, settings.brokerFeeUsd, shares);
+          const feeOk = feePlanValid(r.close, slFee);
           const added = addedTickers.has(r.ticker);
           return (
             <article
@@ -236,15 +260,27 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
               <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-800/60 pt-3 text-sm">
                 <div>
                   <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-                    Target TP
+                    TP (no fee)
                   </dt>
-                  <dd className="mt-1 font-mono text-emerald-300">${formatPrice(targetTp)}</dd>
+                  <dd className="mt-1 font-mono text-slate-300">${formatPrice(r.targetTp)}</dd>
                 </div>
                 <div className="text-right">
                   <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-                    Target SL
+                    TP (fee)
+                  </dt>
+                  <dd className="mt-1 font-mono text-emerald-300">${formatPrice(tpFee)}</dd>
+                </div>
+                <div>
+                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                    SL (no fee)
                   </dt>
                   <dd className="mt-1 font-mono text-red-300">${formatPrice(r.targetSl)}</dd>
+                </div>
+                <div className="text-right">
+                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+                    SL (fee)
+                  </dt>
+                  <dd className="mt-1 font-mono text-red-300">{feeOk ? `$${formatPrice(slFee)}` : "—"}</dd>
                 </div>
                 <div>
                   <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
@@ -263,7 +299,9 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
               <div className="mt-4 flex gap-2" onClick={(e) => e.stopPropagation()}>
                 <button
                   type="button"
-                  onClick={() => onAdd(r, targetTp)}
+                  onClick={() =>
+                    onAdd(r, feeOk ? tpFee : r.targetTp, feeOk ? slFee : r.targetSl)
+                  }
                   disabled={addingTicker === r.ticker || added || shares <= 0}
                   className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition ${
                     added
@@ -294,8 +332,10 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
                   <th className="px-4 py-3 text-right">Price</th>
                   {!detailOpen && (
                     <>
-                      <th className="px-4 py-3 text-right">Target TP</th>
-                      <th className="px-4 py-3 text-right">Target SL</th>
+                      <th className="px-4 py-3 text-right">TP (no fee)</th>
+                      <th className="px-4 py-3 text-right">TP (fee)</th>
+                      <th className="px-4 py-3 text-right">SL (no fee)</th>
+                      <th className="px-4 py-3 text-right">SL (fee)</th>
                       <th className="px-4 py-3 text-right">Risk / Share</th>
                     </>
                   )}
@@ -306,7 +346,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
               <tbody>
                 {loading && !data && (
                   <tr>
-                    <td colSpan={detailOpen ? 4 : 7} className="px-4 py-12 text-center text-slate-400">
+                    <td colSpan={detailOpen ? 4 : 9} className="px-4 py-12 text-center text-slate-400">
                       <span className="inline-flex items-center gap-3">
                         <span
                           aria-hidden
@@ -319,14 +359,16 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
                 )}
                 {!loading && data && filteredStocks.length === 0 && (
                   <tr>
-                    <td colSpan={detailOpen ? 4 : 7} className="px-4 py-12 text-center text-slate-400">
+                    <td colSpan={detailOpen ? 4 : 9} className="px-4 py-12 text-center text-slate-400">
                       No tickers matched the GMMA fan + AO trigger today.
                     </td>
                   </tr>
                 )}
                 {filteredStocks.map((r) => {
-                  const shares = computeShares(riskUsd, r.close, r.targetSl, settings.totalCapital);
-                  const targetTp = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
+                  const shares = computeShares(riskUsd, r.close, r.targetSl, totalCapital);
+                  const tpFee = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
+                  const slFee = feeAdjustedSl(r.targetSl, settings.brokerFeeUsd, shares);
+                  const feeOk = feePlanValid(r.close, slFee);
                   const added = addedTickers.has(r.ticker);
                   const isSelected = selected?.ticker === r.ticker;
                   return (
@@ -358,8 +400,10 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
                       <td className="px-4 py-3 text-right font-mono text-slate-100">${formatPrice(r.close)}</td>
                       {!detailOpen && (
                         <>
-                          <td className="px-4 py-3 text-right font-mono text-emerald-300">${formatPrice(targetTp)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-slate-300">${formatPrice(r.targetTp)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-emerald-300">${formatPrice(tpFee)}</td>
                           <td className="px-4 py-3 text-right font-mono text-red-300">${formatPrice(r.targetSl)}</td>
+                          <td className="px-4 py-3 text-right font-mono text-red-300">{feeOk ? `$${formatPrice(slFee)}` : "—"}</td>
                           <td className="px-4 py-3 text-right font-mono text-slate-300">${formatPrice(r.riskPerShare)}</td>
                         </>
                       )}
@@ -371,7 +415,9 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
                           <span onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
-                              onClick={() => onAdd(r, targetTp)}
+                              onClick={() =>
+                                onAdd(r, feeOk ? tpFee : r.targetTp, feeOk ? slFee : r.targetSl)
+                              }
                               disabled={addingTicker === r.ticker || added || shares <= 0}
                               className={`rounded px-2.5 py-1 text-xs font-medium transition ${
                                 added
@@ -400,6 +446,8 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
               row={selected}
               shares={selectedShares}
               targetTp={selectedTp}
+              slFee={selectedSlFee}
+              feeUsd={settings.brokerFeeUsd}
               onClose={() => setSelected(null)}
             />
           </div>
@@ -414,6 +462,8 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
             row={selected}
             shares={selectedShares}
             targetTp={selectedTp}
+            slFee={selectedSlFee}
+            feeUsd={settings.brokerFeeUsd}
             onClose={() => setSelected(null)}
           />
         </div>
@@ -421,7 +471,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
 
       <p className="text-xs text-slate-500">
         Position sizing uses your{" "}
-        <span className="text-emerald-400">${settings.totalCapital.toLocaleString()}</span> capital ×{" "}
+        <span className="text-emerald-400">${totalCapital.toLocaleString()}</span> capital ×{" "}
         <span className="text-emerald-400">{settings.riskPerTradePct.toFixed(2)}%</span> per trade
         (= ${riskUsd.toFixed(2)} risk / trade), capped at what your capital can buy
         (fractional shares). TP targets are raised by{" "}
@@ -447,6 +497,20 @@ function computeShares(riskUsd: number, entry: number, stop: number, capitalUsd:
 function feeAdjustedTp(targetTp: number, feeUsd: number, shares: number): number {
   if (shares <= 0 || feeUsd <= 0) return targetTp;
   return Math.round((targetTp + feeUsd / shares) * 100) / 100;
+}
+
+// Raise the SL by the same per-share fee. A slightly tighter stop means the
+// price loss plus the round-trip fee equals exactly the risked amount — so paired
+// with feeAdjustedTp the trade nets a TRUE 1:2 after commissions.
+function feeAdjustedSl(targetSl: number, feeUsd: number, shares: number): number {
+  if (shares <= 0 || feeUsd <= 0) return targetSl;
+  return Math.round((targetSl + feeUsd / shares) * 100) / 100;
+}
+
+// The fee-covered plan only exists when the per-share fee is smaller than the
+// risk — otherwise the fee-adjusted stop would sit at or above the entry.
+function feePlanValid(entry: number, slFee: number): boolean {
+  return slFee < entry;
 }
 
 function LoadingCard() {
