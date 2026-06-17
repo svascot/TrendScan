@@ -4,11 +4,37 @@
 
 A lightweight, hosted momentum scanner + manual portfolio tracker built for a small group of users (family / friends).
 
+## How TP / SL is calculated (worked example)
+
+**"1:2" is a distance on price.** The stop sits a set distance *below* entry (your risk); the target is placed *twice that distance above* (your reward). The **fee-covered** prices then shift both levels by the per-share fee so the ratio also holds on the actual dollars in your account.
+
+| Input | Value |
+| --- | --- |
+| Entry (today's close) | **$100.00** |
+| ATR(14) | **$4.00** |
+| Capital × risk % | **$12,000 × 1% = $120** |
+| Broker fee (round trip) | **$2.00** |
+
+1. **SL** = entry − 1.5 × ATR = 100 − 6 = **$94.00**  → risk = **$6 / share**
+2. **TP** = entry + 2 × risk = 100 + 12 = **$112.00**  → reward $12 ÷ risk $6 = **2** (1:2 on price)
+3. **Shares** = min(120 ÷ 6, 12,000 ÷ 100) = **20**
+4. **Fee / share** = $2 ÷ 20 = **$0.10**
+5. **TP(fee)** = 112 + 0.10 = **$112.10**;  **SL(fee)** = 94 + 0.10 = **$94.10** (slightly tighter stop)
+
+Net P&L on the 20-share position, after the $2 round-trip fee:
+
+| Plan | If TP hit | If SL hit | Net ratio |
+| --- | --- | --- | --- |
+| No-fee levels ($112 / $94) | +$238 | −$122 | ≈ 1.95 : 1 (the flat fee tilts it) |
+| **Fee-covered ($112.10 / $94.10)** | **+$240** | **−$120** | **exactly 2 : 1** |
+
+The fee-covered plan makes your net loss equal your budgeted risk ($120) and your net win exactly 2× ($240). If a position is tiny enough that the per-share fee exceeds the risk, the fee-covered plan can't exist — size up (more capital or higher risk %) so a flat fee stays negligible.
+
 ## What it does
 
 - Scans a curated universe of ~600 large-cap US equities + premium ETFs (S&P 500, Nasdaq 100, SPY/QQQ/SCHD/JEPQ, sector SPDRs) against four hard rules every visit.
 - Ranks the survivors with a transparent 3-factor composite score.
-- Runs a second, independent **GMMA scanner** over the same universe — a Guppy Multiple Moving Average fan (EMA 30/35/40/45/50/60) plus an Awesome Oscillator momentum trigger. Each match ships a structural stop loss, a dynamic 1:2 take-profit raised to also cover the user's flat broker fee, and a position size in shares derived from the user's money-management settings (total capital × risk per trade).
+- Runs a second, independent **GMMA scanner** over the same universe — a Guppy Multiple Moving Average dual ribbon (short/trader EMAs 3/5/8/10/12/15 above long/investor EMAs 30/35/40/45/50/60) with a pullback-into-the-short-ribbon entry and an Awesome Oscillator confirmation (bullish saucer or zero-line cross). Each match ships an ATR-based stop (entry − 1.5×ATR), a 1:2 take-profit, and a position size in shares from the user's money-management settings (total capital × risk per trade). Both the stop and target also come in **fee-covered** variants that bake in the round-trip broker fee so the trade nets a true 1:2 (see the worked example above).
 - Lets each user maintain a personal **watchlist** of arbitrary US equities — autocompleted from Alpaca's tradable-asset feed — and runs the same scoring engine against it. Failing setups stay visible with their score halved so you can watch them recover.
 - Lets each user manually track open trades against personalised TP/SL targets and archive closed ones with a running win rate.
 - Stays on permanent free tiers across Vercel + Supabase + Alpaca.
