@@ -24,23 +24,39 @@ import type { GmmaChartBar, GmmaScanResult } from "@/lib/gmma-scanner";
 interface PanelProps {
   row: GmmaScanResult;
   shares: number;
-  targetTp: number;
+  targetTp: number; // fee-adjusted TP
+  slFee: number; // fee-adjusted SL
+  feeUsd: number; // round-trip broker fee, for net P&L
   onClose: () => void;
 }
 
 // One Guppy ribbon line: its data key on the chart row + its colour.
+type RibbonKey = keyof Pick<
+  GmmaChartBar,
+  | "ema3" | "ema5" | "ema8" | "ema10" | "ema12" | "ema15"
+  | "ema30" | "ema35" | "ema40" | "ema45" | "ema50" | "ema60"
+>;
 interface RibbonLine {
-  key: keyof Pick<GmmaChartBar, "ema30" | "ema35" | "ema40" | "ema45" | "ema50" | "ema60">;
+  key: RibbonKey;
   label: string;
   color: string;
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
- * Apple-style chromatic palette — short MAs in electric cyan/blue, transitioning
- * through teal into emerald for the medium/long ribbon so compression vs.
- * expansion of the fan reads at a glance.
+ * Two Guppy ribbons drawn as one fan: the short-term (trader) ribbon 3-15 in
+ * warm amber→gold, the long-term (investor) ribbon 30-60 in cool teal→emerald.
+ * The warm/cool split makes the canonical signal — short ribbon riding above the
+ * long ribbon, and their compression/expansion — read at a glance.
  * ──────────────────────────────────────────────────────────────────────────── */
-const RIBBON: readonly RibbonLine[] = [
+const SHORT_RIBBON: readonly RibbonLine[] = [
+  { key: "ema3", label: "MA3", color: "#fbbf24" },
+  { key: "ema5", label: "MA5", color: "#f59e0b" },
+  { key: "ema8", label: "MA8", color: "#f97316" },
+  { key: "ema10", label: "MA10", color: "#fb923c" },
+  { key: "ema12", label: "MA12", color: "#fdba74" },
+  { key: "ema15", label: "MA15", color: "#fcd34d" },
+] as const;
+const LONG_RIBBON: readonly RibbonLine[] = [
   { key: "ema30", label: "MA30", color: "#38bdf8" },
   { key: "ema35", label: "MA35", color: "#22d3ee" },
   { key: "ema40", label: "MA40", color: "#2dd4bf" },
@@ -48,6 +64,7 @@ const RIBBON: readonly RibbonLine[] = [
   { key: "ema50", label: "MA50", color: "#10b981" },
   { key: "ema60", label: "MA60", color: "#059669" },
 ] as const;
+const RIBBON: readonly RibbonLine[] = [...SHORT_RIBBON, ...LONG_RIBBON];
 
 const AO_GREEN = "#10b981";
 const AO_RED = "#ef4444";
@@ -275,21 +292,27 @@ function GmmaVerification({ row }: { row: GmmaScanResult }) {
       </h3>
       <ul className="mt-3 space-y-3.5">
         <VerificationItem
-          pass={breakdown.rule1FanOrderedPass}
-          title="Guppy Ribbon Alignment"
-          detail="Short to medium MAs are perfectly stacked and fanning upwards, confirming strong momentum acceleration."
+          pass={breakdown.rule1TrendAlignedPass}
+          title="Two-Ribbon GMMA Uptrend"
+          detail="The short (trader) ribbon 3–15 is riding entirely above the long (investor) ribbon 30–60, which is itself fanned upward — the canonical GMMA buy alignment."
         />
         <VerificationItem
-          pass={breakdown.rule2PriceInChannelPass}
-          title="Healthy Price Pullback"
-          detail="Current price is trading efficiently inside the compression canal (MA60 ≤ Close ≤ MA30), offering a low-risk entry."
+          pass={breakdown.rule2PullbackToShortRibbonPass}
+          title="Pullback to the Short Ribbon"
+          detail="Price has eased back into the trader ribbon (Close ≤ MA15) while staying above the whole investor ribbon, offering a low-risk continuation entry."
         />
         <VerificationItem
-          pass={breakdown.rule3MomentumPass}
-          title="Awesome Oscillator Momentum Shift"
-          detail="AO histogram has flipped to Green, signaling immediate institutional buying re-entry."
+          pass={breakdown.rule3AoConfirmedPass}
+          title="Awesome Oscillator Confirmation"
+          detail="AO confirms with a bullish saucer or a zero-line cross up — a multi-bar momentum signal, not a single green bar."
         />
       </ul>
+
+      <p className="mt-4 rounded-lg border border-hairline/60 bg-slate-950/40 px-3 py-2 text-xs leading-relaxed text-slate-400">
+        <span className="font-medium text-slate-300">Discretionary exit:</span>{" "}
+        close the position if the short ribbon crosses back below the long ribbon, or the
+        two ribbons compress together — the documented GMMA exit signal.
+      </p>
     </section>
   );
 }
@@ -342,6 +365,8 @@ function DetailBody({
   row,
   shares,
   targetTp,
+  slFee,
+  feeUsd,
   range,
   onRangeChange,
   large = false,
@@ -349,6 +374,8 @@ function DetailBody({
   row: GmmaScanResult;
   shares: number;
   targetTp: number;
+  slFee: number;
+  feeUsd: number;
   range: ChartRange;
   onRangeChange: (r: ChartRange) => void;
   large?: boolean;
@@ -358,15 +385,86 @@ function DetailBody({
     return Number.isFinite(n) ? row.chartBars.slice(-n) : row.chartBars;
   }, [row.chartBars, range]);
 
+  const entry = row.close;
+  // The fee-covered plan only exists when the fee-adjusted stop stays below entry.
+  const feeOk = shares > 0 && slFee < entry;
+
+  // Net dollar P&L on the sized position, after the round-trip fee.
+  // No-fee levels: the fee still erodes both sides (so it lands just off 1:2).
+  const netWinNoFee = (row.targetTp - entry) * shares - feeUsd;
+  const netLossNoFee = -((entry - row.targetSl) * shares + feeUsd);
+  // Fee-covered levels: the fee is baked into the prices → a TRUE net 1:2.
+  const netWinFee = (targetTp - entry) * shares - feeUsd; // = 2× risk
+  const netLossFee = -((entry - slFee) * shares + feeUsd); // = −risk
+
   return (
     <div className="space-y-6 px-5 py-5">
       {/* Trade plan strip */}
-      <dl className="grid grid-cols-4 gap-2 text-center">
-        <Stat label="Entry" value={`$${formatPrice(row.close)}`} tone="neutral" />
-        <Stat label="Target TP" value={`$${formatPrice(targetTp)}`} tone="up" />
-        <Stat label="Target SL" value={`$${formatPrice(row.targetSl)}`} tone="down" />
-        <Stat label="R:R" value={`1:${row.rrRatio}`} tone="neutral" />
+      <dl className="grid grid-cols-2 gap-2 text-center">
+        <Stat label="Entry" value={`$${formatPrice(entry)}`} tone="neutral" />
+        <Stat label="R:R (net, fee-covered)" value={`1:${row.rrRatio}`} tone="neutral" />
       </dl>
+
+      {/* Two plans: clean 1:2 on price vs. fee-covered (true net 1:2) */}
+      <div className="overflow-hidden rounded-lg border border-hairline/60">
+        <table className="w-full font-mono text-xs tabular-nums">
+          <thead>
+            <tr className="border-b border-hairline/60 text-[10px] uppercase tracking-widest text-slate-500">
+              <th className="px-3 py-2 text-left font-medium">Plan</th>
+              <th className="px-3 py-2 text-right font-medium">TP</th>
+              <th className="px-3 py-2 text-right font-medium">SL</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-hairline/40">
+              <td className="px-3 py-2 text-slate-400">No fee</td>
+              <td className="px-3 py-2 text-right text-emerald-300">${formatPrice(row.targetTp)}</td>
+              <td className="px-3 py-2 text-right text-red-300">${formatPrice(row.targetSl)}</td>
+            </tr>
+            <tr>
+              <td className="px-3 py-2 text-slate-400">Fee-covered</td>
+              <td className="px-3 py-2 text-right text-emerald-300">{feeOk ? `$${formatPrice(targetTp)}` : "—"}</td>
+              <td className="px-3 py-2 text-right text-red-300">{feeOk ? `$${formatPrice(slFee)}` : "—"}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* Projected net P&L on the sized position */}
+      {shares > 0 && (
+        <div className="rounded-lg border border-hairline/60 bg-slate-950/40 px-3 py-3">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
+            Projected net P&amp;L · {Number.isInteger(shares) ? shares : shares.toFixed(2)} shares
+          </p>
+
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-slate-600">No-fee levels</p>
+          <dl className="mt-1 space-y-1 font-mono text-xs tabular-nums">
+            <PnlRow label="If TP hit" value={netWinNoFee} />
+            <PnlRow label="If SL hit" value={netLossNoFee} />
+          </dl>
+
+          {feeOk ? (
+            <>
+              <p className="mt-3 font-mono text-[10px] uppercase tracking-wider text-emerald-500/80">
+                Fee-covered levels · true 1:2
+              </p>
+              <dl className="mt-1 space-y-1 font-mono text-xs tabular-nums">
+                <PnlRow label="If TP hit" value={netWinFee} />
+                <PnlRow label="If SL hit" value={netLossFee} />
+              </dl>
+            </>
+          ) : (
+            <p className="mt-3 text-[11px] leading-relaxed text-amber-400/90">
+              Fee-covered plan unavailable: the ${feeUsd.toFixed(2)} round-trip fee exceeds the
+              amount risked at this position size — size up or skip this trade.
+            </p>
+          )}
+
+          <p className="mt-3 text-[10px] leading-relaxed text-slate-600">
+            All figures net of your ${feeUsd.toFixed(2)} round-trip broker fee.
+          </p>
+        </div>
+      )}
 
       {/* Chart range selector */}
       <div className="flex items-center justify-between">
@@ -378,14 +476,10 @@ function DetailBody({
 
       <GmmaDualChart bars={bars} large={large} />
 
-      {/* Ribbon legend */}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-        {RIBBON.map((r) => (
-          <span key={r.key} className="inline-flex items-center gap-1.5">
-            <span aria-hidden className="h-0.5 w-4 rounded-full" style={{ backgroundColor: r.color }} />
-            <span className="font-mono text-[10px] tracking-wide text-slate-500">{r.label}</span>
-          </span>
-        ))}
+      {/* Ribbon legend — grouped into the two Guppy ribbons */}
+      <div className="space-y-1.5">
+        <RibbonLegendRow title="Short (trader) 3–15" lines={SHORT_RIBBON} />
+        <RibbonLegendRow title="Long (investor) 30–60" lines={LONG_RIBBON} />
       </div>
 
       <div className="border-t border-hairline/70 pt-5">
@@ -402,6 +496,32 @@ function DetailBody({
           <span className="font-mono text-slate-300">${formatPrice(row.riskPerShare)}</span> / share.
         </p>
       )}
+    </div>
+  );
+}
+
+function PnlRow({ label, value }: { label: string; value: number }) {
+  const positive = value >= 0;
+  return (
+    <div className="flex items-center justify-between gap-6">
+      <dt className="text-slate-400">{label}</dt>
+      <dd className={positive ? "text-emerald-300" : "text-red-300"}>
+        {positive ? "+" : "−"}${formatPrice(Math.abs(value))}
+      </dd>
+    </div>
+  );
+}
+
+function RibbonLegendRow({ title, lines }: { title: string; lines: readonly RibbonLine[] }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="font-mono text-[9px] uppercase tracking-widest text-slate-600">{title}</span>
+      {lines.map((r) => (
+        <span key={r.key} className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="h-0.5 w-4 rounded-full" style={{ backgroundColor: r.color }} />
+          <span className="font-mono text-[10px] tracking-wide text-slate-500">{r.label}</span>
+        </span>
+      ))}
     </div>
   );
 }
@@ -483,7 +603,7 @@ function MinimizeIcon({ className = "" }: { className?: string }) {
  * Desktop (md+) master-detail aside — slides in organically from the right and
  * stays sticky beside the table. Mirrors the scanner's SetupDetailPanel offset.
  * ════════════════════════════════════════════════════════════════════════════ */
-export function GMMADetailPanel({ row, shares, targetTp, onClose }: PanelProps) {
+export function GMMADetailPanel({ row, shares, targetTp, slFee, feeUsd, onClose }: PanelProps) {
   const [shown, setShown] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [range, setRange] = useState<ChartRange>("3M");
@@ -530,7 +650,7 @@ export function GMMADetailPanel({ row, shares, targetTp, onClose }: PanelProps) 
             onToggleMaximize={() => setMaximized(false)}
           />
           <div className="flex-1 overflow-y-auto">
-            <DetailBody row={row} shares={shares} targetTp={targetTp} range={range} onRangeChange={setRange} large />
+            <DetailBody row={row} shares={shares} targetTp={targetTp} slFee={slFee} feeUsd={feeUsd} range={range} onRangeChange={setRange} large />
           </div>
         </div>
       </div>
@@ -551,7 +671,7 @@ export function GMMADetailPanel({ row, shares, targetTp, onClose }: PanelProps) 
         onToggleMaximize={() => setMaximized(true)}
       />
       <div className="flex-1 overflow-y-auto">
-        <DetailBody row={row} shares={shares} targetTp={targetTp} range={range} onRangeChange={setRange} />
+        <DetailBody row={row} shares={shares} targetTp={targetTp} slFee={slFee} feeUsd={feeUsd} range={range} onRangeChange={setRange} />
       </div>
     </aside>
   );
@@ -561,7 +681,7 @@ export function GMMADetailPanel({ row, shares, targetTp, onClose }: PanelProps) 
  * Mobile (<md) drawer — full-height sheet that slides in from the right over a
  * dimmed backdrop, using the same organic transform/ease as the desktop aside.
  * ════════════════════════════════════════════════════════════════════════════ */
-export function GMMADetailDrawer({ row, shares, targetTp, onClose }: PanelProps) {
+export function GMMADetailDrawer({ row, shares, targetTp, slFee, feeUsd, onClose }: PanelProps) {
   const [shown, setShown] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [range, setRange] = useState<ChartRange>("3M");
@@ -608,7 +728,7 @@ export function GMMADetailDrawer({ row, shares, targetTp, onClose }: PanelProps)
           onToggleMaximize={() => setMaximized((m) => !m)}
         />
         <div className="flex-1 overflow-y-auto">
-          <DetailBody row={row} shares={shares} targetTp={targetTp} range={range} onRangeChange={setRange} large={maximized} />
+          <DetailBody row={row} shares={shares} targetTp={targetTp} slFee={slFee} feeUsd={feeUsd} range={range} onRangeChange={setRange} large={maximized} />
         </div>
       </div>
     </div>
