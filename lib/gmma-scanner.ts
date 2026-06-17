@@ -40,7 +40,8 @@ export interface GmmaBreakdown {
   rule2PullbackToShortRibbonPass: boolean;
   // AO confirms via a bullish saucer or a zero-line cross up.
   rule3AoConfirmedPass: boolean;
-  riskPerSharePositive: boolean; // close > targetSl
+  // The strict 1:2 TP sits below real resistance, so the target is reachable.
+  tpReachablePass: boolean;
 }
 
 export interface GmmaScanResult {
@@ -62,11 +63,13 @@ export interface GmmaScanResult {
   ema60: number;
   aoPrev: number;
   aoCurr: number;
-  atr14: number; // ATR(14) used to size the stop
-  targetTp: number; // absolute $
-  targetSl: number; // absolute $
+  atr14: number; // ATR(14) used for the SL/TP buffers
+  supportLow: number; // recent swing low the SL is anchored to
+  resistanceHigh: number; // recent swing high the TP targets
+  targetTp: number; // absolute $ — strict 1:2, verified below resistance
+  targetSl: number; // absolute $ — just below support
   riskPerShare: number; // close - targetSl
-  rrRatio: number; // (targetTp - close) / (close - targetSl) — by construction = 2
+  rrRatio: number; // (targetTp - close) / (close - targetSl) = 2 by construction
   indices: IndexName[];
   chartBars: GmmaChartBar[];
   breakdown: GmmaBreakdown;
@@ -76,7 +79,14 @@ const CHART_BARS_LOOKBACK = 90;
 const SHORT_PERIODS = [3, 5, 8, 10, 12, 15] as const; // trader ribbon
 const LONG_PERIODS = [30, 35, 40, 45, 50, 60] as const; // investor ribbon
 const ATR_PERIOD = 14;
-const ATR_STOP_MULT = 1.5; // SL = close - 1.5 × ATR(14)
+// SL is anchored to real support (recent pullback low). TP is a strict 1:2 on
+// price, but only kept when it sits below the recent resistance (a price the
+// stock actually traded) — so the target is genuinely reachable. ATR only buffers.
+const SUPPORT_LOOKBACK = 10; // bars to find the recent support (pullback low)
+const RESISTANCE_LOOKBACK = 20; // bars to find the recent resistance (swing high)
+const SL_ATR_BUFFER = 0.3; // place SL this far below support so noise doesn't tag it
+const TP_CLEARANCE_ATR = 0.25; // the 1:2 TP must sit at least this far below resistance
+const RR_TARGET = 2; // strict 1:2 reward:risk
 const MIN_BARS = 60; // EMA(60) seed is the binding minimum; short ribbon + AO + ATR need fewer
 
 // Build the enriched chart series for the last ~90 bars. The EMA/AO series are
@@ -167,18 +177,26 @@ export function evaluateGmmaTicker(
 
   if (!(rule1 && rule2 && rule3)) return null;
 
-  // ---- ATR-based stop loss ----
-  // Volatility-aware stop gives normal pullback noise room to breathe, unlike a
-  // structural stop hugging the ribbon the entry just pulled back into.
+  // ---- SL at real support; TP at a strict 1:2 that must be reachable ----
   const atr14 = atr(highs, lows, closes, ATR_PERIOD);
   if (atr14 === null || atr14 <= 0) return null;
-  const targetSl = close - ATR_STOP_MULT * atr14;
 
-  // SL must sit below the entry, otherwise position sizing is undefined.
+  // Stop: just below the recent support (pullback low) — a real level — with a
+  // small ATR buffer so a normal wiggle doesn't tag it exactly.
+  const supportLow = Math.min(...lows.slice(-SUPPORT_LOOKBACK));
+  const targetSl = supportLow - SL_ATR_BUFFER * atr14;
   if (targetSl >= close) return null;
 
   const riskPerShare = close - targetSl;
-  const targetTp = close + 2 * riskPerShare;
+  const targetTp = close + RR_TARGET * riskPerShare; // strict 1:2 on price
+
+  // Realism gate: the 1:2 target must sit below the recent resistance (a price
+  // the stock actually traded), with a small clearance so it fills before the
+  // wall. If the 1:2 lands above recent resistance, it's not reachable → skip.
+  const resistanceHigh = Math.max(...highs.slice(-RESISTANCE_LOOKBACK));
+  if (targetTp > resistanceHigh - TP_CLEARANCE_ATR * atr14) return null;
+
+  const rrRatio = RR_TARGET; // 2 by construction
 
   return {
     ticker,
@@ -198,17 +216,19 @@ export function evaluateGmmaTicker(
     aoPrev: round4(aoPrev),
     aoCurr: round4(aoCurr),
     atr14: round2(atr14),
+    supportLow: round2(supportLow),
+    resistanceHigh: round2(resistanceHigh),
     targetTp: round2(targetTp),
     targetSl: round2(targetSl),
     riskPerShare: round2(riskPerShare),
-    rrRatio: 2,
+    rrRatio: round2(rrRatio),
     indices: getIndicesFor(ticker),
     chartBars: buildGmmaChartBars(bars, closes, highs, lows),
     breakdown: {
       rule1TrendAlignedPass: rule1,
       rule2PullbackToShortRibbonPass: rule2,
       rule3AoConfirmedPass: rule3,
-      riskPerSharePositive: true,
+      tpReachablePass: true,
     },
   };
 }

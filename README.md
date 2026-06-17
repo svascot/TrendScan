@@ -6,35 +6,38 @@ A lightweight, hosted momentum scanner + manual portfolio tracker built for a sm
 
 ## How TP / SL is calculated (worked example)
 
-**"1:2" is a distance on price.** The stop sits a set distance *below* entry (your risk); the target is placed *twice that distance above* (your reward). The **fee-covered** prices then shift both levels by the per-share fee so the ratio also holds on the actual dollars in your account.
+**SL on real support, TP at a strict 1:2 that's reachable.** The **SL** sits just below the recent *support* (pullback low) — a real level. The **TP** is a strict **1:2** (entry + 2×risk), but the setup is only kept if that TP lands *below* the recent *resistance* — a price the stock already traded — so it's reachable, not beyond a wall. The **fee-covered** prices then shift both levels by the per-share fee so the 1:2 also holds on the actual dollars in your account.
 
 | Input | Value |
 | --- | --- |
 | Entry (today's close) | **$100.00** |
-| ATR(14) | **$4.00** |
-| Capital × risk % | **$12,000 × 1% = $120** |
+| ATR(14) (for buffers) | **$4.00** |
+| Support (10-bar low) | **$97.00** |
+| Resistance (20-bar high) | **$112.00** |
+| Capital × risk % | **$12,600 × 1% = $126** |
 | Broker fee (round trip) | **$2.00** |
 
-1. **SL** = entry − 1.5 × ATR = 100 − 6 = **$94.00**  → risk = **$6 / share**
-2. **TP** = entry + 2 × risk = 100 + 12 = **$112.00**  → reward $12 ÷ risk $6 = **2** (1:2 on price)
-3. **Shares** = min(120 ÷ 6, 12,000 ÷ 100) = **20**
-4. **Fee / share** = $2 ÷ 20 = **$0.10**
-5. **TP(fee)** = 112 + 0.10 = **$112.10**;  **SL(fee)** = 94 + 0.10 = **$94.10** (slightly tighter stop)
+1. **SL** = support − 0.3 × ATR = 97 − 1.2 = **$95.80**  → risk = **$4.20 / share**
+2. **TP** = entry + 2 × risk = 100 + 8.40 = **$108.40**  (strict 1:2)
+3. **Reachable?** TP $108.40 ≤ resistance − 0.25×ATR = 112 − 1.0 = $111 → **✓ kept** (if the 1:2 TP were *above* resistance, the setup is skipped)
+4. **Shares** = min(126 ÷ 4.20, 12,600 ÷ 100) = **30**
+5. **Fee / share** = $2 ÷ 30 = **$0.07**
+6. **TP(fee)** = 108.40 + 0.07 = **$108.47**;  **SL(fee)** = 95.80 + 0.07 = **$95.87** (slightly tighter stop)
 
-Net P&L on the 20-share position, after the $2 round-trip fee:
+Net P&L on the 30-share position, after the $2 round-trip fee:
 
 | Plan | If TP hit | If SL hit | Net ratio |
 | --- | --- | --- | --- |
-| No-fee levels ($112 / $94) | +$238 | −$122 | ≈ 1.95 : 1 (the flat fee tilts it) |
-| **Fee-covered ($112.10 / $94.10)** | **+$240** | **−$120** | **exactly 2 : 1** |
+| No-fee levels ($108.40 / $95.80) | +$250 | −$128 | ≈ 1.95 : 1 (the flat fee tilts it) |
+| **Fee-covered ($108.47 / $95.87)** | **+$252** | **−$126** | **exactly 2 : 1** |
 
-The fee-covered plan makes your net loss equal your budgeted risk ($120) and your net win exactly 2× ($240). If a position is tiny enough that the per-share fee exceeds the risk, the fee-covered plan can't exist — size up (more capital or higher risk %) so a flat fee stays negligible.
+The fee-covered plan makes your net loss equal your budgeted risk ($126 = 1%) and your net win exactly 2× ($252), so the 1:2 survives commissions. If the strict 1:2 TP would land *above* the recent resistance, the setup is skipped — that target isn't realistically reachable. If a position is tiny enough that the per-share fee exceeds the risk, the fee-covered plan can't exist — size up so a flat fee stays negligible.
 
 ## What it does
 
 - Scans a curated universe of ~600 large-cap US equities + premium ETFs (S&P 500, Nasdaq 100, SPY/QQQ/SCHD/JEPQ, sector SPDRs) against four hard rules every visit.
 - Ranks the survivors with a transparent 3-factor composite score.
-- Runs a second, independent **GMMA scanner** over the same universe — a Guppy Multiple Moving Average dual ribbon (short/trader EMAs 3/5/8/10/12/15 above long/investor EMAs 30/35/40/45/50/60) with a pullback-into-the-short-ribbon entry and an Awesome Oscillator confirmation (bullish saucer or zero-line cross). Each match ships an ATR-based stop (entry − 1.5×ATR), a 1:2 take-profit, and a position size in shares from the user's money-management settings (total capital × risk per trade). Both the stop and target also come in **fee-covered** variants that bake in the round-trip broker fee so the trade nets a true 1:2 (see the worked example above).
+- Runs a second, independent **GMMA scanner** over the same universe — a Guppy Multiple Moving Average dual ribbon (short/trader EMAs 3/5/8/10/12/15 above long/investor EMAs 30/35/40/45/50/60) with a pullback-into-the-short-ribbon entry and an Awesome Oscillator confirmation (bullish saucer or zero-line cross). Each match ships a stop just below the recent support (pullback low, buffered by a fraction of ATR) and a **strict 1:2** take-profit (entry + 2×risk) — kept only when that target lands below the recent resistance, so it's realistically reachable. It also ships a position size in shares from the user's money-management settings (total capital × risk per trade). Both the stop and target come in **fee-covered** variants that bake in the round-trip broker fee so the net 1:2 survives commissions (see the worked example above).
 - Lets each user maintain a personal **watchlist** of arbitrary US equities — autocompleted from Alpaca's tradable-asset feed — and runs the same scoring engine against it. Failing setups stay visible with their score halved so you can watch them recover.
 - Lets each user manually track open trades against personalised TP/SL targets and archive closed ones with a running win rate.
 - Stays on permanent free tiers across Vercel + Supabase + Alpaca.

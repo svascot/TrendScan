@@ -139,7 +139,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
             Guppy Dual Ribbon (3–15 / 30–60) + Awesome Oscillator
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            ATR(1.5×) stop + dynamic 1:2 risk:reward. Position size is computed for your{" "}
+            SL at real support · strict 1:2 TP, kept only when it&rsquo;s reachable below the recent resistance. Position size is computed for your{" "}
             <span className="text-emerald-300">{settings.riskPerTradePct.toFixed(2)}% risk</span> per trade on a{" "}
             <span className="text-emerald-300">${totalCapital.toLocaleString()}</span> account.
             {settings.brokerFeeUsd > 0 && (
@@ -544,7 +544,7 @@ function SharesBadge({ shares }: { shares: number }) {
   );
 }
 
-// Collapsible worked example explaining how the 1:2 levels (and their
+// Collapsible worked example explaining how the structural SL/TP (and their
 // fee-covered variants) are derived. Numbers are illustrative, not live.
 function TpSlExplainer() {
   return (
@@ -560,55 +560,61 @@ function TpSlExplainer() {
 
       <div className="mt-4 space-y-4 text-slate-400">
         <p>
-          <span className="text-slate-200">&ldquo;1:2&rdquo; is a distance on price.</span>{" "}
-          The stop sits a set distance <em>below</em> entry (your risk); the target is placed{" "}
-          <em>twice that distance above</em> (your reward). The fee-covered prices then shift both
-          levels by the per-share fee so the ratio also holds on the actual dollars in your account.
+          <span className="text-slate-200">SL on real support, TP at a strict 1:2 that&rsquo;s reachable.</span>{" "}
+          The <strong>SL</strong> sits just below the recent <em>support</em> (pullback low) — a real
+          level. The <strong>TP</strong> is a strict <strong>1:2</strong> (entry + 2×risk), but the
+          setup is only kept if that TP lands <em>below</em> the recent <em>resistance</em> — a price
+          the stock already traded — so it&rsquo;s reachable, not beyond a wall. The fee-covered prices
+          then shift both levels by the per-share fee so the 1:2 also holds on the actual dollars.
         </p>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[420px] font-mono text-xs tabular-nums">
+          <table className="w-full min-w-[440px] font-mono text-xs tabular-nums">
             <tbody className="[&_td]:py-1 [&_td:first-child]:text-slate-500">
               <tr><td>Entry (close)</td><td className="text-slate-200">$100.00</td><td className="text-slate-500">— today&rsquo;s price</td></tr>
-              <tr><td>ATR(14)</td><td className="text-slate-200">$4.00</td><td className="text-slate-500">avg daily range</td></tr>
-              <tr><td>Capital × risk%</td><td className="text-slate-200">$12,000 × 1% = $120</td><td className="text-slate-500">risk budget</td></tr>
+              <tr><td>ATR(14)</td><td className="text-slate-200">$4.00</td><td className="text-slate-500">for the buffers</td></tr>
+              <tr><td>Support (10-bar low)</td><td className="text-slate-200">$97.00</td><td className="text-slate-500">anchors the SL</td></tr>
+              <tr><td>Resistance (20-bar high)</td><td className="text-slate-200">$112.00</td><td className="text-slate-500">reachability gate</td></tr>
+              <tr><td>Capital × risk%</td><td className="text-slate-200">$12,600 × 1% = $126</td><td className="text-slate-500">risk budget</td></tr>
               <tr><td>Broker fee</td><td className="text-slate-200">$2.00</td><td className="text-slate-500">round trip</td></tr>
             </tbody>
           </table>
         </div>
 
         <ol className="list-decimal space-y-1.5 pl-5 font-mono text-xs leading-relaxed">
-          <li><span className="text-slate-300">SL</span> = entry − 1.5×ATR = 100 − 6 = <span className="text-red-300">$94.00</span> &nbsp;(risk = $6/sh)</li>
-          <li><span className="text-slate-300">TP</span> = entry + 2×risk = 100 + 12 = <span className="text-emerald-300">$112.00</span> &nbsp;(reward $12 ÷ risk $6 = <span className="text-slate-200">2</span>)</li>
-          <li><span className="text-slate-300">Shares</span> = min(120 ÷ 6, 12000 ÷ 100) = <span className="text-slate-200">20</span></li>
-          <li><span className="text-slate-300">Fee / share</span> = $2 ÷ 20 = <span className="text-slate-200">$0.10</span></li>
-          <li><span className="text-slate-300">TP(fee)</span> = 112 + 0.10 = <span className="text-emerald-300">$112.10</span>; <span className="text-slate-300">SL(fee)</span> = 94 + 0.10 = <span className="text-red-300">$94.10</span></li>
+          <li><span className="text-slate-300">SL</span> = support − 0.3×ATR = 97 − 1.2 = <span className="text-red-300">$95.80</span> &nbsp;(risk = $4.20/sh)</li>
+          <li><span className="text-slate-300">TP</span> = entry + 2×risk = 100 + 8.40 = <span className="text-emerald-300">$108.40</span> &nbsp;(strict 1:2)</li>
+          <li><span className="text-slate-300">Reachable?</span> TP $108.40 ≤ resistance − 0.25×ATR = 112 − 1.0 = $111 &nbsp;<span className="text-emerald-400">✓ kept</span></li>
+          <li><span className="text-slate-300">Shares</span> = min(126 ÷ 4.20, 12600 ÷ 100) = <span className="text-slate-200">30</span></li>
+          <li><span className="text-slate-300">Fee / share</span> = $2 ÷ 30 = <span className="text-slate-200">$0.07</span></li>
+          <li><span className="text-slate-300">TP(fee)</span> = 108.40 + 0.07 = <span className="text-emerald-300">$108.47</span>; <span className="text-slate-300">SL(fee)</span> = 95.80 + 0.07 = <span className="text-red-300">$95.87</span></li>
         </ol>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">No-fee levels ($112 / $94)</p>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">No-fee levels ($108.40 / $95.80)</p>
             <dl className="mt-2 space-y-1 font-mono text-xs tabular-nums">
-              <div className="flex justify-between"><dt>If TP hit</dt><dd className="text-emerald-300">+$238</dd></div>
-              <div className="flex justify-between"><dt>If SL hit</dt><dd className="text-red-300">−$122</dd></div>
+              <div className="flex justify-between"><dt>If TP hit</dt><dd className="text-emerald-300">+$250</dd></div>
+              <div className="flex justify-between"><dt>If SL hit</dt><dd className="text-red-300">−$128</dd></div>
             </dl>
             <p className="mt-2 text-[11px] text-slate-500">≈ 1.95 : 1 — the flat fee tilts it.</p>
           </div>
           <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] p-3">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-emerald-500/80">Fee-covered ($112.10 / $94.10)</p>
+            <p className="font-mono text-[10px] uppercase tracking-widest text-emerald-500/80">Fee-covered ($108.47 / $95.87)</p>
             <dl className="mt-2 space-y-1 font-mono text-xs tabular-nums">
-              <div className="flex justify-between"><dt>If TP hit</dt><dd className="text-emerald-300">+$240</dd></div>
-              <div className="flex justify-between"><dt>If SL hit</dt><dd className="text-red-300">−$120</dd></div>
+              <div className="flex justify-between"><dt>If TP hit</dt><dd className="text-emerald-300">+$252</dd></div>
+              <div className="flex justify-between"><dt>If SL hit</dt><dd className="text-red-300">−$126</dd></div>
             </dl>
             <p className="mt-2 text-[11px] text-emerald-300/80">= exactly 2 : 1, net of fees.</p>
           </div>
         </div>
 
         <p className="text-xs leading-relaxed text-slate-500">
-          The fee-covered plan makes your net loss equal your budgeted risk ($120) and your net win
-          exactly 2× ($240). If a position is tiny enough that the per-share fee exceeds the risk,
-          the fee-covered plan can&rsquo;t exist — size up (more capital or higher risk %) so a flat
-          fee stays negligible.
+          The fee-covered plan makes your net loss equal your budgeted risk ($126 = 1%) and your net
+          win exactly 2× ($252), so the 1:2 survives commissions. If the strict 1:2 TP would land{" "}
+          <em>above</em> the recent resistance, the setup is skipped — that target isn&rsquo;t realistically
+          reachable. And if a position is so small that the per-share fee exceeds the risk, the
+          fee-covered plan can&rsquo;t exist — size up so a flat fee stays negligible.
         </p>
       </div>
     </details>

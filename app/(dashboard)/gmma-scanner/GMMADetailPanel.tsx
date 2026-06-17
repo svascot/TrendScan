@@ -306,6 +306,11 @@ function GmmaVerification({ row }: { row: GmmaScanResult }) {
           title="Awesome Oscillator Confirmation"
           detail="AO confirms with a bullish saucer or a zero-line cross up — a multi-bar momentum signal, not a single green bar."
         />
+        <VerificationItem
+          pass={breakdown.tpReachablePass}
+          title="1:2 Target Is Reachable"
+          detail="The strict 1:2 take-profit sits below the recent resistance — a price the stock has already traded — so it's realistically reachable, not beyond a wall."
+        />
       </ul>
 
       <p className="mt-4 rounded-lg border border-hairline/60 bg-slate-950/40 px-3 py-2 text-xs leading-relaxed text-slate-400">
@@ -402,7 +407,7 @@ function DetailBody({
       {/* Trade plan strip */}
       <dl className="grid grid-cols-2 gap-2 text-center">
         <Stat label="Entry" value={`$${formatPrice(entry)}`} tone="neutral" />
-        <Stat label="R:R (net, fee-covered)" value={`1:${row.rrRatio}`} tone="neutral" />
+        <Stat label="R:R" value={`1:${row.rrRatio}`} tone="neutral" />
       </dl>
 
       {/* Two plans: clean 1:2 on price vs. fee-covered (true net 1:2) */}
@@ -430,6 +435,15 @@ function DetailBody({
         </table>
       </div>
 
+      <p className="text-[11px] leading-relaxed text-slate-500">
+        SL anchored just below support (recent low{" "}
+        <span className="font-mono text-slate-400">${formatPrice(row.supportLow)}</span>). The strict
+        1:2 TP <span className="font-mono text-slate-400">${formatPrice(row.targetTp)}</span> sits below
+        the recent resistance{" "}
+        <span className="font-mono text-slate-400">${formatPrice(row.resistanceHigh)}</span>, so it&rsquo;s
+        a reachable price the stock has already traded.
+      </p>
+
       {/* Projected net P&L on the sized position */}
       {shares > 0 && (
         <div className="rounded-lg border border-hairline/60 bg-slate-950/40 px-3 py-3">
@@ -446,7 +460,7 @@ function DetailBody({
           {feeOk ? (
             <>
               <p className="mt-3 font-mono text-[10px] uppercase tracking-wider text-emerald-500/80">
-                Fee-covered levels · true 1:2
+                Fee-covered levels · net 1:{row.rrRatio}
               </p>
               <dl className="mt-1 space-y-1 font-mono text-xs tabular-nums">
                 <PnlRow label="If TP hit" value={netWinFee} />
