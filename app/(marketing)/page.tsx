@@ -1,47 +1,62 @@
 import Link from "next/link";
+import { GmmaDualChart, LONG_RIBBON, RibbonLegendRow, SHORT_RIBBON } from "@/components/gmma/GmmaDualChart";
+import { EXAMPLE_GMMA } from "@/lib/gmma-example";
 
-interface StrategyCard {
+interface RuleCard {
+  n: string;
   title: string;
-  formula: string;
   body: string;
 }
 
-const STRATEGY_CARDS: StrategyCard[] = [
+// The four rules the GMMA + AO scanner checks — same language as the in-app
+// "Algorithmic Verification" panel, written for a first-time visitor.
+const RULES: RuleCard[] = [
   {
-    title: "200-day Trend Filter",
-    formula: "Close > MA(200)",
+    n: "01",
+    title: "Two-ribbon GMMA uptrend",
     body:
-      "Ensures we only pick assets locked in long-term bullish territory. No fighting the macro tide.",
+      "The short (trader) ribbon 3–15 rides entirely above the long (investor) ribbon 30–60, which is itself fanned upward — the canonical Guppy buy alignment.",
   },
   {
-    title: "50-day Momentum",
-    formula: "Close > MA(50)  •  MA(50) > MA(200)",
+    n: "02",
+    title: "Pullback to the short ribbon",
     body:
-      "Triggers entry when short-term velocity accelerates above structural support — the Golden Cross orientation.",
+      "Price eases back into the trader ribbon (Close ≤ MA15) while staying above the whole investor ribbon — a low-risk continuation entry instead of chasing the top.",
   },
   {
-    title: "RSI Sweet Spot",
-    formula: "55 ≤ RSI(14) ≤ 65",
+    n: "03",
+    title: "Awesome Oscillator confirms",
     body:
-      "Filters out overextended stocks. We buy setups with runway left to run, never near the saturation peak.",
+      "The AO confirms momentum with a bullish saucer or a zero-line cross up — a multi-bar signal, not a single green bar.",
+  },
+  {
+    n: "04",
+    title: "Stop at support · reachable 1:2 target",
+    body:
+      "The stop sits just below the prior swing low. The strict 1:2 take-profit is placed below the prior resistance — a price the stock has already traded — so the target is realistically reachable.",
   },
 ];
 
 export default function MarketingPage() {
+  const ex = EXAMPLE_GMMA;
   return (
     <main>
-      <section className="mx-auto max-w-6xl px-6 pt-20 pb-16 sm:pt-28 sm:pb-24">
+      {/* ───────── Hero ───────── */}
+      <section className="mx-auto max-w-6xl px-6 pt-20 pb-12 sm:pt-28 sm:pb-16">
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-emerald-400">
-          Quantitative Swing Trading
+          GMMA + Awesome Oscillator
         </p>
         <h1 className="mt-6 text-5xl font-bold leading-tight tracking-tight text-slate-50 sm:text-6xl">
-          Catch the Wave.
+          Read the Ribbons.
           <br />
-          <span className="text-emerald-400">Compound the Gains.</span>
+          <span className="text-emerald-400">Time the Pullback.</span>
         </h1>
         <p className="mt-6 max-w-2xl text-lg leading-relaxed text-slate-300">
-          A quantitative momentum scanner engineered for short-term swing trading. No noise,
-          no hype — just raw mathematical setups on the most liquid names in the market.
+          TrendScan&rsquo;s headline scanner watches the{" "}
+          <span className="text-slate-100">Guppy Multiple Moving Average</span> — two ribbons of
+          EMAs — and the <span className="text-slate-100">Awesome Oscillator</span> together. It
+          surfaces stocks in a clean uptrend that have just pulled back to the short ribbon, with
+          momentum confirming and a mechanical 1:2 trade plan attached.
         </p>
         <div className="mt-10 flex flex-wrap gap-4">
           <Link
@@ -57,45 +72,136 @@ export default function MarketingPage() {
             Sign In
           </Link>
         </div>
-
-        <dl className="mt-14 grid grid-cols-2 gap-x-10 gap-y-6 border-t border-slate-800 pt-10 sm:grid-cols-4">
-          <Stat label="Take Profit" value="+4.0%" tone="emerald" />
-          <Stat label="Stop Loss" value="-2.0%" tone="red" />
-          <Stat label="Hold Period" value="1–5 days" />
-          <Stat label="Risk : Reward" value="1 : 2" />
-        </dl>
       </section>
 
+      {/* ───────── Live-style worked example (fictional STOCK) ───────── */}
       <section className="border-t border-slate-800 bg-slate-950/40">
         <div className="mx-auto max-w-6xl px-6 py-16">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 className="font-mono text-sm uppercase tracking-[0.3em] text-slate-400">
+                What a setup looks like
+              </h2>
+              <p className="mt-3 max-w-2xl text-lg text-slate-200">
+                Here is exactly what the GMMA + AO dashboard shows for a qualifying name — the price
+                with both Guppy ribbons on top, the Awesome Oscillator below, and the trade plan.
+              </p>
+            </div>
+            <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-widest text-amber-300">
+              Illustrative example · fictional data · not a real ticker
+            </span>
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[1.6fr_1fr]">
+            {/* Chart card */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
+              <div className="flex items-baseline justify-between">
+                <h3 className="font-mono text-xl font-bold text-slate-50">{ex.ticker}</h3>
+                <span className="font-mono text-sm tabular-nums text-slate-300">
+                  ${ex.entry.toFixed(2)}
+                </span>
+              </div>
+              <div className="mt-4">
+                <GmmaDualChart bars={ex.chartBars} />
+              </div>
+              <div className="mt-4 space-y-1.5">
+                <RibbonLegendRow title="Short (trader) 3–15" lines={SHORT_RIBBON} />
+                <RibbonLegendRow title="Long (investor) 30–60" lines={LONG_RIBBON} />
+              </div>
+            </div>
+
+            {/* Trade-plan card */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
+              <h3 className="font-mono text-xs uppercase tracking-widest text-slate-400">
+                Example trade plan
+              </h3>
+              <dl className="mt-4 grid grid-cols-2 gap-3">
+                <PlanStat label="Entry" value={`$${ex.entry.toFixed(2)}`} />
+                <PlanStat label="Risk : Reward" value={`1 : ${ex.rrRatio}`} />
+                <PlanStat label="Take Profit" value={`$${ex.targetTp.toFixed(2)}`} tone="emerald" />
+                <PlanStat label="Stop Loss" value={`$${ex.targetSl.toFixed(2)}`} tone="red" />
+              </dl>
+              <p className="mt-5 text-[13px] leading-relaxed text-slate-400">
+                Stop anchored just below the prior swing low{" "}
+                <span className="font-mono text-slate-300">${ex.supportLow.toFixed(2)}</span>. The
+                strict 1:2 target{" "}
+                <span className="font-mono text-slate-300">${ex.targetTp.toFixed(2)}</span> sits below
+                the prior resistance{" "}
+                <span className="font-mono text-slate-300">${ex.resistanceHigh.toFixed(2)}</span>, so
+                it&rsquo;s a price the stock has already traded — reachable, not beyond a wall.
+              </p>
+              <div className="mt-5 grid grid-cols-2 gap-3 border-t border-slate-800 pt-5 font-mono text-xs tabular-nums">
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-slate-500">Risk / share</p>
+                  <p className="mt-1 text-red-300">${ex.riskPerShare.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-widest text-slate-500">Reward / share</p>
+                  <p className="mt-1 text-emerald-300">
+                    ${(ex.targetTp - ex.entry).toFixed(2)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ───────── How to read the setup — the four rules ───────── */}
+      <section className="border-t border-slate-800">
+        <div className="mx-auto max-w-6xl px-6 py-16">
           <h2 className="font-mono text-sm uppercase tracking-[0.3em] text-slate-400">
-            Our Core Engine Strategy
+            How the scanner reads it
           </h2>
           <p className="mt-4 max-w-3xl text-lg text-slate-200">
-            Three mathematical filters, applied post-market close every day, against the S&amp;P 500,
-            the Nasdaq 100, and a curated set of premium ETFs.
+            Every name on the dashboard has cleared the same four mechanical checks. Nothing
+            discretionary — just the math, applied after the close.
           </p>
 
-          <div className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-3">
-            {STRATEGY_CARDS.map((c) => (
+          <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-2">
+            {RULES.map((r) => (
               <article
-                key={c.title}
+                key={r.n}
                 className="rounded-xl border border-slate-800 bg-slate-900/80 p-6 transition hover:border-emerald-500/40"
               >
-                <h3 className="text-lg font-semibold text-slate-50">{c.title}</h3>
-                <p className="mt-3 font-mono text-sm text-emerald-400">{c.formula}</p>
-                <p className="mt-4 text-sm leading-relaxed text-slate-300">{c.body}</p>
+                <div className="flex items-baseline gap-3">
+                  <span className="font-mono text-sm text-emerald-400">{r.n}</span>
+                  <h3 className="text-lg font-semibold text-slate-50">{r.title}</h3>
+                </div>
+                <p className="mt-3 text-sm leading-relaxed text-slate-300">{r.body}</p>
               </article>
             ))}
           </div>
 
-          <div className="mt-12 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-6">
-            <h3 className="font-mono text-sm uppercase tracking-widest text-emerald-400">
-              Take the cash and walk away.
+          {/* Secondary mention of the classic scanner */}
+          <div className="mt-8 rounded-xl border border-slate-800 bg-slate-900/50 p-6">
+            <h3 className="font-mono text-xs uppercase tracking-widest text-slate-400">
+              Also included
+            </h3>
+            <p className="mt-3 text-sm leading-relaxed text-slate-300">
+              Alongside GMMA + AO, TrendScan ships a classic momentum scanner — a 200-day trend
+              filter, 50-day momentum, and an RSI sweet spot (55–65) — for a second, independent
+              read on the same liquid universe.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ───────── Educational disclaimer ───────── */}
+      <section className="border-t border-slate-800 bg-slate-950/40">
+        <div className="mx-auto max-w-6xl px-6 py-14">
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6">
+            <h3 className="font-mono text-sm uppercase tracking-widest text-amber-300">
+              Educational use only
             </h3>
             <p className="mt-3 text-sm leading-relaxed text-slate-200">
-              Hit your target, archive the trade, rotate capital into a different setup from the
-              ranked list. No revenge trades, no chasing peaks, no emotional re-entries.
+              TrendScan is an <span className="font-medium text-slate-100">educational and
+              informational</span> tool. It does not execute trades and is{" "}
+              <span className="font-medium text-slate-100">in no way a recommendation to invest</span>.
+              Every example shown — including &ldquo;{EXAMPLE_GMMA.ticker}&rdquo; — is fictional and
+              for illustration only. How you manage your portfolio is entirely your own
+              responsibility. Markets carry risk; do your own research and consider professional
+              advice before trading.
             </p>
           </div>
         </div>
@@ -121,12 +227,21 @@ export default function MarketingPage() {
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: "emerald" | "red" }) {
-  const color = tone === "emerald" ? "text-emerald-400" : tone === "red" ? "text-red-400" : "text-slate-100";
+function PlanStat({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "emerald" | "red";
+}) {
+  const color =
+    tone === "emerald" ? "text-emerald-300" : tone === "red" ? "text-red-300" : "text-slate-100";
   return (
-    <div>
-      <dt className="font-mono text-xs uppercase tracking-widest text-slate-500">{label}</dt>
-      <dd className={`mt-1 font-mono text-2xl font-bold ${color}`}>{value}</dd>
+    <div className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2.5">
+      <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">{label}</dt>
+      <dd className={`mt-1 font-mono text-base tabular-nums ${color}`}>{value}</dd>
     </div>
   );
 }

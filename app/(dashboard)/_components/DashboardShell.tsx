@@ -28,8 +28,8 @@ type NavItem = {
 };
 
 const NAV: readonly NavItem[] = [
-  { href: "/scanner", label: "Scanner", short: "Scanner", icon: ScannerIcon },
   { href: "/gmma-scanner", label: "GMMA Scanner", short: "GMMA", icon: GmmaIcon },
+  { href: "/scanner", label: "Scanner", short: "Scanner", icon: ScannerIcon },
   { href: "/watchlist", label: "Watchlist", short: "Watch", icon: WatchlistIcon },
   { href: "/portfolio", label: "Portfolio", short: "Portfolio", icon: PortfolioIcon },
   { href: "/settings", label: "Settings", short: "Settings", icon: SettingsIcon },
@@ -54,10 +54,10 @@ export function DashboardShell({ email, children }: Props) {
     <div className="flex min-h-screen flex-col bg-ink lg:flex-row">
       {/* ───────── Desktop sidebar (md+) ───────── */}
       <aside className="hidden border-r border-hairline/70 bg-panel/40 lg:flex lg:w-64 lg:shrink-0 lg:flex-col">
-        <div className="flex items-center gap-3 px-6 py-6">
+        <Link href="/" className="flex items-center gap-3 px-6 py-6 transition-opacity hover:opacity-80">
           <Image
             src="/logo.png"
-            alt="TrendScan"
+            alt="TrendScan — go to home"
             width={36}
             height={36}
             priority
@@ -66,7 +66,7 @@ export function DashboardShell({ email, children }: Props) {
           <span className="font-mono text-lg font-semibold tracking-tight text-slate-100">
             TrendScan
           </span>
-        </div>
+        </Link>
 
         <nav className="flex flex-1 flex-col gap-1 px-3">
           {NAV.map((item) => {
@@ -111,23 +111,31 @@ export function DashboardShell({ email, children }: Props) {
         <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-hairline/70 bg-ink/80 px-4 py-3 backdrop-blur-md sm:px-6 sm:py-4">
           <div className="flex min-w-0 items-center gap-3">
             {/* Brand lockup — mobile only (sidebar carries it on desktop) */}
-            <Image
-              src="/logo.png"
-              alt="TrendScan"
-              width={28}
-              height={28}
-              priority
-              className="h-7 w-7 rounded-md lg:hidden"
-            />
+            <Link href="/" aria-label="TrendScan — go to home" className="lg:hidden">
+              <Image
+                src="/logo.png"
+                alt="TrendScan"
+                width={28}
+                height={28}
+                priority
+                className="h-7 w-7 rounded-md"
+              />
+            </Link>
             <h1 className="truncate font-mono text-[11px] uppercase tracking-[0.3em] text-slate-400 sm:text-xs">
               {pageTitle}
             </h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
-            <span className="hidden text-sm text-slate-300 sm:inline">{firstName}</span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 font-mono text-sm font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
-              {initials}
-            </span>
+            <Link
+              href="/settings"
+              aria-label="Account settings"
+              className="flex items-center gap-2 rounded-full transition-opacity hover:opacity-80 sm:gap-3"
+            >
+              <span className="hidden text-sm text-slate-300 sm:inline">{firstName}</span>
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-500/15 font-mono text-sm font-semibold text-emerald-300 ring-1 ring-emerald-500/30">
+                {initials}
+              </span>
+            </Link>
             {/* Logout lives in the sidebar on desktop; surface it here on mobile */}
             <button
               type="button"
