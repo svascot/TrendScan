@@ -7,6 +7,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { firstNameFromEmail, initialsFromEmail } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import {
+  EdgeIcon,
   GmmaIcon,
   LogoutIcon,
   PortfolioIcon,
@@ -32,6 +33,7 @@ const NAV: readonly NavItem[] = [
   { href: "/scanner", label: "Scanner", short: "Scanner", icon: ScannerIcon },
   { href: "/watchlist", label: "Watchlist", short: "Watch", icon: WatchlistIcon },
   { href: "/portfolio", label: "Portfolio", short: "Portfolio", icon: PortfolioIcon },
+  { href: "/edge", label: "Edge", short: "Edge", icon: EdgeIcon },
   { href: "/settings", label: "Settings", short: "Settings", icon: SettingsIcon },
 ] as const;
 

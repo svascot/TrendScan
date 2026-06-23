@@ -9,7 +9,19 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Monaco", "Consolas", "monospace"],
+        // Distinctive, deliberate type system (wired to next/font in layout.tsx):
+        // Hanken Grotesk for UI/headings, JetBrains Mono for the terminal-grade
+        // tickers, prices and metrics that carry the product's identity.
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        mono: [
+          "var(--font-mono)",
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Monaco",
+          "Consolas",
+          "monospace",
+        ],
       },
       colors: {
         // Sophisticated institutional dark palette

@@ -65,6 +65,16 @@ export function PortfolioIcon(props: IconProps) {
   );
 }
 
+// Edge — performance / equity curve
+export function EdgeIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M3 3v18h18" />
+      <path d="M7 14l3.5-4 3 2.5L20 6" />
+    </Base>
+  );
+}
+
 // Settings — sliders
 export function SettingsIcon(props: IconProps) {
   return (

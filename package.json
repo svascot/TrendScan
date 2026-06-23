@@ -12,7 +12,8 @@
     "sweep": "tsx scripts/sweep-gmma.ts",
     "sweep2": "tsx scripts/sweep-regime-exits.ts",
     "sweeprr": "tsx scripts/sweep-rr.ts",
-    "build-universe": "tsx scripts/build-universe.ts"
+    "build-universe": "tsx scripts/build-universe.ts",
+    "build-edge-snapshot": "tsx scripts/build-edge-snapshot.ts"
   },
   "dependencies": {
     "@radix-ui/react-hover-card": "^1.1.16",

@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { etoroLink, formatPrice } from "@/lib/format";
 import type { StrategySettings } from "@/lib/strategy";
 import type { GmmaScanResponse, GmmaScanResult } from "@/lib/gmma-scanner";
+import { BracketCell, EmptyState, SkeletonCards } from "../_components/setup-card";
+import { useIsMobile } from "../_components/use-is-mobile";
 import { GMMADetailPanel, GMMADetailDrawer } from "./GMMADetailPanel";
 
 const LIMIT_OPTIONS = [10, 20, 50, 100] as const;
@@ -23,6 +25,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
   // recalculates sizing / P&L live but does not persist; reload resets to settings.
   const [totalCapital, setTotalCapital] = useState<number>(settings.totalCapital);
 
+  const isMobile = useIsMobile();
   const refreshMinutes = Math.max(1, settings.refreshIntervalMinutes);
   const riskUsd = totalCapital * (settings.riskPerTradePct / 100);
 
@@ -186,234 +189,73 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
         </div>
       )}
 
-      {/* Mobile card layout */}
-      <div className="space-y-3 md:hidden">
-        {loading && !data && <LoadingCard />}
-        {!loading && data && filteredStocks.length === 0 && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-10 text-center text-sm text-slate-400">
-            No tickers matched the GMMA fan + AO trigger today.
-          </div>
-        )}
-        {filteredStocks.map((r) => {
-          const shares = computeShares(riskUsd, r.close, r.targetSl, totalCapital);
-          const tpFee = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
-          const slFee = feeAdjustedSl(r.targetSl, settings.brokerFeeUsd, shares);
-          const feeOk = feePlanValid(r.close, slFee);
-          const added = addedTickers.has(r.ticker);
-          return (
-            <article
-              key={r.ticker}
-              role="button"
-              tabIndex={0}
-              onClick={() => setSelected(r)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setSelected(r);
-                }
-              }}
-              className="cursor-pointer rounded-xl border border-slate-800 bg-slate-900/40 p-4 transition-colors hover:border-emerald-500/30"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <a
-                    href={etoroLink(r.ticker)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="font-mono text-lg font-semibold text-emerald-400 hover:underline"
-                  >
-                    {r.ticker}
-                  </a>
-                  <p className="mt-0.5 font-mono text-sm text-slate-100">{formatPrice(r.close)}</p>
-                </div>
-                <SharesBadge shares={shares} />
-              </div>
-
-              <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-800/60 pt-3 text-sm">
-                <div>
-                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-                    TP (no fee)
-                  </dt>
-                  <dd className="mt-1 font-mono text-slate-300">${formatPrice(r.targetTp)}</dd>
-                </div>
-                <div className="text-right">
-                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-                    TP (fee)
-                  </dt>
-                  <dd className="mt-1 font-mono text-emerald-300">${formatPrice(tpFee)}</dd>
-                </div>
-                <div>
-                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-                    SL (no fee)
-                  </dt>
-                  <dd className="mt-1 font-mono text-red-300">${formatPrice(r.targetSl)}</dd>
-                </div>
-                <div className="text-right">
-                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-                    SL (fee)
-                  </dt>
-                  <dd className="mt-1 font-mono text-red-300">{feeOk ? `$${formatPrice(slFee)}` : "—"}</dd>
-                </div>
-                <div>
-                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-                    Risk / Share
-                  </dt>
-                  <dd className="mt-1 font-mono text-slate-200">${formatPrice(r.riskPerShare)}</dd>
-                </div>
-                <div className="text-right">
-                  <dt className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-                    R:R
-                  </dt>
-                  <dd className="mt-1 font-mono text-slate-200">1:{r.rrRatio}</dd>
-                </div>
-              </dl>
-
-              <div className="mt-4 flex gap-2" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  onClick={() =>
-                    onAdd(r, feeOk ? tpFee : r.targetTp, feeOk ? slFee : r.targetSl)
-                  }
-                  disabled={addingTicker === r.ticker || added || shares <= 0}
-                  className={`flex-1 rounded-md px-3 py-2 text-xs font-medium transition ${
-                    added
-                      ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                      : "border border-emerald-500/40 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
-                  } disabled:opacity-60`}
-                >
-                  {added ? "Added" : addingTicker === r.ticker ? "Adding…" : "+ Add"}
-                </button>
-              </div>
-            </article>
-          );
-        })}
-      </div>
-
-      {/* Desktop master-detail split (md+) */}
-      <div className="hidden md:flex md:items-start md:gap-5">
+      {/* Results — decision-card first, with a slide-in detail panel on desktop */}
+      <div className="flex items-start gap-5">
         <div
           className={`min-w-0 transition-all duration-300 ease-out ${
-            detailOpen ? "md:w-[60%]" : "md:w-full"
+            detailOpen ? "w-full md:w-[58%]" : "w-full"
           }`}
         >
-          <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-slate-800 bg-slate-950/60 text-xs uppercase tracking-wider text-slate-400">
-                <tr>
-                  <th className="px-4 py-3">Ticker</th>
-                  <th className="px-4 py-3 text-right">Price</th>
-                  {!detailOpen && (
-                    <>
-                      <th className="px-4 py-3 text-right">TP (no fee)</th>
-                      <th className="px-4 py-3 text-right">TP (fee)</th>
-                      <th className="px-4 py-3 text-right">SL (no fee)</th>
-                      <th className="px-4 py-3 text-right">SL (fee)</th>
-                      <th className="px-4 py-3 text-right">Risk / Share</th>
-                    </>
-                  )}
-                  <th className="px-4 py-3 text-right">Size (Shares)</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading && !data && (
-                  <tr>
-                    <td colSpan={detailOpen ? 4 : 9} className="px-4 py-12 text-center text-slate-400">
-                      <span className="inline-flex items-center gap-3">
-                        <span
-                          aria-hidden
-                          className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400"
-                        />
-                        Running GMMA scanner across ~2,500 tickers — this can take 5–10 seconds…
-                      </span>
-                    </td>
-                  </tr>
-                )}
-                {!loading && data && filteredStocks.length === 0 && (
-                  <tr>
-                    <td colSpan={detailOpen ? 4 : 9} className="px-4 py-12 text-center text-slate-400">
-                      No tickers matched the GMMA fan + AO trigger today.
-                    </td>
-                  </tr>
-                )}
-                {filteredStocks.map((r) => {
-                  const shares = computeShares(riskUsd, r.close, r.targetSl, totalCapital);
-                  const tpFee = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
-                  const slFee = feeAdjustedSl(r.targetSl, settings.brokerFeeUsd, shares);
-                  const feeOk = feePlanValid(r.close, slFee);
-                  const added = addedTickers.has(r.ticker);
-                  const isSelected = selected?.ticker === r.ticker;
-                  return (
-                    <tr
-                      key={r.ticker}
-                      onClick={() => setSelected(r)}
-                      aria-selected={isSelected}
-                      className={`group cursor-pointer border-b border-slate-800/60 transition-colors last:border-b-0 ${
-                        isSelected ? "bg-emerald-500/[0.06]" : "hover:bg-slate-800/30"
-                      }`}
-                    >
-                      <td className="relative px-4 py-3">
-                        <span
-                          aria-hidden
-                          className={`absolute left-0 top-1/2 h-[55%] w-[2px] -translate-y-1/2 rounded-full bg-emerald-400 transition-all duration-200 ${
-                            isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                          }`}
-                        />
-                        <a
-                          href={etoroLink(r.ticker)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="font-mono font-semibold text-emerald-400 hover:underline"
-                        >
-                          {r.ticker}
-                        </a>
-                      </td>
-                      <td className="px-4 py-3 text-right font-mono text-slate-100">${formatPrice(r.close)}</td>
-                      {!detailOpen && (
-                        <>
-                          <td className="px-4 py-3 text-right font-mono text-slate-300">${formatPrice(r.targetTp)}</td>
-                          <td className="px-4 py-3 text-right font-mono text-emerald-300">${formatPrice(tpFee)}</td>
-                          <td className="px-4 py-3 text-right font-mono text-red-300">${formatPrice(r.targetSl)}</td>
-                          <td className="px-4 py-3 text-right font-mono text-red-300">{feeOk ? `$${formatPrice(slFee)}` : "—"}</td>
-                          <td className="px-4 py-3 text-right font-mono text-slate-300">${formatPrice(r.riskPerShare)}</td>
-                        </>
-                      )}
-                      <td className="px-4 py-3 text-right">
-                        <SharesBadge shares={shares} />
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2">
-                          <span onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onAdd(r, feeOk ? tpFee : r.targetTp, feeOk ? slFee : r.targetSl)
-                              }
-                              disabled={addingTicker === r.ticker || added || shares <= 0}
-                              className={`rounded px-2.5 py-1 text-xs font-medium transition ${
-                                added
-                                  ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                                  : "border border-emerald-500/40 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
-                              } disabled:opacity-60`}
-                            >
-                              {added ? "Added" : addingTicker === r.ticker ? "Adding…" : "+ Add"}
-                            </button>
-                          </span>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          {loading && !data ? (
+            <div className="space-y-3">
+              <p className="flex items-center gap-2 text-xs text-slate-500">
+                <span
+                  aria-hidden
+                  className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400"
+                />
+                Scanning ~2,500 tickers for the GMMA fan + AO trigger — this can take 5–10 seconds…
+              </p>
+              <SkeletonCards detailOpen={detailOpen} />
+            </div>
+          ) : data && filteredStocks.length === 0 ? (
+            <EmptyState
+              title="No clean setups today"
+              actionLabel="Check your watchlist →"
+              onAction={() => router.push("/watchlist")}
+            >
+              We scanned{" "}
+              <span className="font-mono text-slate-200">
+                {(data.count + data.skipped).toLocaleString()}
+              </span>{" "}
+              tickers and none cleared all three GMMA filters today. That&rsquo;s the strategy doing
+              its job — it stays patient when the market isn&rsquo;t offering high-probability,
+              reachable 1:2 setups.
+            </EmptyState>
+          ) : (
+            <div
+              className={`grid gap-3 ${
+                detailOpen ? "grid-cols-1" : "sm:grid-cols-2 xl:grid-cols-3"
+              }`}
+            >
+              {filteredStocks.map((r) => {
+                const shares = computeShares(riskUsd, r.close, r.targetSl, totalCapital);
+                const tpFee = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
+                const slFee = feeAdjustedSl(r.targetSl, settings.brokerFeeUsd, shares);
+                const feeOk = feePlanValid(r.close, slFee);
+                return (
+                  <DecisionCard
+                    key={r.ticker}
+                    r={r}
+                    shares={shares}
+                    stop={feeOk ? slFee : r.targetSl}
+                    target={feeOk ? tpFee : r.targetTp}
+                    selected={selected?.ticker === r.ticker}
+                    added={addedTickers.has(r.ticker)}
+                    adding={addingTicker === r.ticker}
+                    onSelect={() => setSelected(r)}
+                    onAdd={() =>
+                      onAdd(r, feeOk ? tpFee : r.targetTp, feeOk ? slFee : r.targetSl)
+                    }
+                  />
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Right master-detail panel — slides in beside the list */}
-        {selected && (
-          <div className="hidden w-[40%] flex-shrink-0 md:block">
+        {/* Desktop detail panel — sticky beside the cards (page keeps scrolling) */}
+        {selected && !isMobile && (
+          <div className="w-[42%] flex-shrink-0">
             <GMMADetailPanel
               key={selected.ticker}
               row={selected}
@@ -427,19 +269,18 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
         )}
       </div>
 
-      {/* Mobile slide-in drawer */}
-      {selected && (
-        <div className="md:hidden">
-          <GMMADetailDrawer
-            key={selected.ticker}
-            row={selected}
-            shares={selectedShares}
-            targetTp={selectedTp}
-            slFee={selectedSlFee}
-            feeUsd={settings.brokerFeeUsd}
-            onClose={() => setSelected(null)}
-          />
-        </div>
+      {/* Mobile slide-in drawer — only mounted on mobile, so its body-scroll lock
+          never fires on desktop. */}
+      {selected && isMobile && (
+        <GMMADetailDrawer
+          key={selected.ticker}
+          row={selected}
+          shares={selectedShares}
+          targetTp={selectedTp}
+          slFee={selectedSlFee}
+          feeUsd={settings.brokerFeeUsd}
+          onClose={() => setSelected(null)}
+        />
       )}
 
       <p className="text-xs text-slate-500">
@@ -453,6 +294,133 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
         <a href="/settings" className="text-emerald-400 hover:underline" onClick={(e) => { e.preventDefault(); router.push("/settings"); }}>Settings</a>.
       </p>
     </div>
+  );
+}
+
+// ───────────────────────── Decision card ─────────────────────────
+// Leads with the decision — ticker, buy price, the SL/TP/risk bracket, size and
+// a one-tap add — and tucks the full math (EMAs, AO, fee math, chart) behind the
+// detail panel via "Why →". The fee-covered SL/TP are shown when valid; otherwise
+// the raw structural levels (the same logic the +Add button uses).
+function DecisionCard({
+  r,
+  shares,
+  stop,
+  target,
+  selected,
+  added,
+  adding,
+  onSelect,
+  onAdd,
+}: {
+  r: GmmaScanResult;
+  shares: number;
+  stop: number;
+  target: number;
+  selected: boolean;
+  added: boolean;
+  adding: boolean;
+  onSelect: () => void;
+  onAdd: () => void;
+}) {
+  const sizable = shares > 0;
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      aria-selected={selected}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className={`group relative cursor-pointer overflow-hidden rounded-xl border p-4 transition-all duration-200 ${
+        selected
+          ? "border-emerald-500/50 bg-emerald-500/[0.06] ring-1 ring-emerald-500/20"
+          : "border-slate-800 bg-slate-900/40 hover:border-emerald-500/30 hover:bg-slate-900/70"
+      }`}
+    >
+      <span
+        aria-hidden
+        className={`absolute inset-y-0 left-0 w-[3px] bg-gradient-to-b from-emerald-300 to-emerald-600 transition-opacity duration-200 ${
+          selected ? "opacity-100" : "opacity-0 group-hover:opacity-70"
+        }`}
+      />
+
+      {/* Decision line */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <a
+              href={etoroLink(r.ticker)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="font-mono text-lg font-bold tracking-tight text-slate-50 transition-colors hover:text-emerald-300"
+            >
+              {r.ticker}
+            </a>
+            {r.indices.map((ix) => (
+              <span
+                key={ix}
+                className="rounded border border-slate-700 bg-slate-800/50 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-slate-400"
+              >
+                {ix === "sp500" ? "S&P 500" : "Nasdaq 100"}
+              </span>
+            ))}
+          </div>
+          <p className="mt-1 text-[13px] text-slate-400">
+            <span className="font-semibold text-emerald-400">Buy</span>{" "}
+            <span className="text-slate-500">~</span>
+            <span className="font-mono text-slate-200">${formatPrice(r.close)}</span>
+          </p>
+        </div>
+        <SharesBadge shares={shares} />
+      </div>
+
+      {/* The bracket — the decision essence */}
+      <div className="mt-3 grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-slate-800 bg-slate-800/70">
+        <BracketCell label="Stop" value={`$${formatPrice(stop)}`} sub="−1R" tone="loss" />
+        <BracketCell label="Target" value={`$${formatPrice(target)}`} sub="+2R" tone="gain" />
+        <BracketCell
+          label="Risk/sh"
+          value={`$${formatPrice(r.riskPerShare)}`}
+          sub={`1:${r.rrRatio}`}
+          tone="neutral"
+        />
+      </div>
+
+      {/* Actions */}
+      <div className="mt-3 flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={onAdd}
+          disabled={adding || added || !sizable}
+          className={`flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+            added
+              ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+              : "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
+          } disabled:cursor-not-allowed disabled:opacity-50`}
+        >
+          {added
+            ? "✓ Added to Portfolio"
+            : adding
+              ? "Adding…"
+              : sizable
+                ? "+ Add to Portfolio"
+                : "Position too small"}
+        </button>
+        <button
+          type="button"
+          onClick={onSelect}
+          className="shrink-0 rounded-lg border border-slate-700 px-3 py-2 font-mono text-[11px] text-slate-400 transition hover:border-emerald-500/40 hover:text-emerald-300"
+        >
+          Why →
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -486,20 +454,6 @@ function feePlanValid(entry: number, slFee: number): boolean {
   return slFee < entry;
 }
 
-function LoadingCard() {
-  return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-10 text-center text-sm text-slate-400">
-      <span className="inline-flex items-center gap-3">
-        <span
-          aria-hidden
-          className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400"
-        />
-        Running GMMA scanner…
-      </span>
-    </div>
-  );
-}
-
 function SharesBadge({ shares }: { shares: number }) {
   if (shares <= 0) {
     return (
@@ -509,8 +463,13 @@ function SharesBadge({ shares }: { shares: number }) {
     );
   }
   return (
-    <span className="inline-flex items-center rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-mono text-xs font-semibold text-emerald-300">
-      {Number.isInteger(shares) ? shares : shares.toFixed(2)}
+    <span className="inline-flex flex-col items-end rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-right">
+      <span className="font-mono text-sm font-semibold leading-none text-emerald-300">
+        {Number.isInteger(shares) ? shares : shares.toFixed(2)}
+      </span>
+      <span className="mt-0.5 font-mono text-[8px] uppercase tracking-widest text-emerald-500/70">
+        shares
+      </span>
     </span>
   );
 }
