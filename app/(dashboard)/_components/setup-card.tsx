@@ -53,15 +53,20 @@ export function SkeletonCards({ detailOpen }: { detailOpen: boolean }) {
 
 // A designed, reassuring empty state — a strict gate means "0 setups" is a
 // frequent, healthy outcome, not an error. Copy is passed by each scanner.
+// An optional refresh re-runs the scan (markets can shift intraday).
 export function EmptyState({
   title,
   actionLabel,
   onAction,
+  onRefresh,
+  refreshing = false,
   children,
 }: {
   title: string;
   actionLabel: string;
   onAction: () => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
   children: ReactNode;
 }) {
   return (
@@ -88,13 +93,40 @@ export function EmptyState({
         </div>
         <h3 className="mt-4 text-base font-semibold text-slate-100">{title}</h3>
         <p className="mt-2 text-sm leading-relaxed text-slate-400">{children}</p>
-        <button
-          type="button"
-          onClick={onAction}
-          className="mt-6 inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:bg-emerald-500/25"
-        >
-          {actionLabel}
-        </button>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+                aria-hidden
+              >
+                <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
+                <path d="M3 21v-5h5" />
+              </svg>
+              {refreshing ? "Scanning…" : "Refresh scan"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onAction}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 transition hover:border-emerald-500/40 hover:text-emerald-300"
+          >
+            {actionLabel}
+          </button>
+        </div>
       </div>
     </div>
   );

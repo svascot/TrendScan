@@ -245,6 +245,8 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
               title="No setups today"
               actionLabel="Check your watchlist →"
               onAction={() => router.push("/watchlist")}
+              onRefresh={() => fetchScan(limit, 1)}
+              refreshing={loading}
             >
               We scanned{" "}
               <span className="font-mono text-slate-200">

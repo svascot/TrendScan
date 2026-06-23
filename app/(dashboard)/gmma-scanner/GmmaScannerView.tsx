@@ -212,6 +212,8 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
               title="No clean setups today"
               actionLabel="Check your watchlist →"
               onAction={() => router.push("/watchlist")}
+              onRefresh={() => fetchScan(limit, 1)}
+              refreshing={loading}
             >
               We scanned{" "}
               <span className="font-mono text-slate-200">
@@ -219,7 +221,10 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
               </span>{" "}
               tickers and none cleared all three GMMA filters today. That&rsquo;s the strategy doing
               its job — it stays patient when the market isn&rsquo;t offering high-probability,
-              reachable 1:2 setups.
+              reachable 1:2 setups. Quiet days are completely normal: across the whole universe the
+              scanner averages only about{" "}
+              <span className="font-mono text-slate-200">0.5 setups a day</span>, so seeing zero is
+              expected more often than not.
             </EmptyState>
           ) : (
             <div
