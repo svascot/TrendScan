@@ -18,7 +18,6 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
   const [error, setError] = useState<string | null>(null);
   const [addingTicker, setAddingTicker] = useState<string | null>(null);
   const [addedTickers, setAddedTickers] = useState<Set<string>>(new Set());
-  const [filters, setFilters] = useState({ sp500: true, nasdaq100: true });
   const [selected, setSelected] = useState<GmmaScanResult | null>(null);
   // Session-only total-capital override, seeded from saved settings. Changing it
   // recalculates sizing / P&L live but does not persist; reload resets to settings.
@@ -27,22 +26,8 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
   const refreshMinutes = Math.max(1, settings.refreshIntervalMinutes);
   const riskUsd = totalCapital * (settings.riskPerTradePct / 100);
 
-  const toggleFilter = (key: "sp500" | "nasdaq100") => {
-    setFilters((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      if (!next.sp500 && !next.nasdaq100) return prev;
-      return next;
-    });
-  };
-
-  const filteredStocks = useMemo(() => {
-    if (!data) return [];
-    return data.results.filter((stock) => {
-      if (filters.sp500 && stock.indices.includes("sp500")) return true;
-      if (filters.nasdaq100 && stock.indices.includes("nasdaq100")) return true;
-      return false;
-    });
-  }, [data, filters]);
+  // The GMMA scanner always analyses the full universe — no index filtering.
+  const filteredStocks = useMemo(() => data?.results ?? [], [data]);
 
   const fetchScan = useCallback(async (l: number, maxAgeSeconds: number) => {
     setLoading(true);
@@ -162,20 +147,6 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <IndexToggle
-              label="S&P 500"
-              active={filters.sp500}
-              lastActive={filters.sp500 && !filters.nasdaq100}
-              onClick={() => toggleFilter("sp500")}
-            />
-            <IndexToggle
-              label="Nasdaq-100"
-              active={filters.nasdaq100}
-              lastActive={filters.nasdaq100 && !filters.sp500}
-              onClick={() => toggleFilter("nasdaq100")}
-            />
-          </div>
           <label className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest text-slate-400">
             Capital&nbsp;$
             <input
@@ -618,38 +589,5 @@ function TpSlExplainer() {
         </p>
       </div>
     </details>
-  );
-}
-
-function IndexToggle({
-  label,
-  active,
-  lastActive,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  lastActive: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={active}
-      aria-disabled={lastActive}
-      onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm transition ${
-        active
-          ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
-          : "border-slate-700 bg-slate-950 text-slate-400 hover:border-slate-600 hover:text-slate-200"
-      } ${lastActive ? "cursor-not-allowed opacity-60" : ""}`}
-    >
-      <span
-        aria-hidden
-        className={`h-2 w-2 rounded-full ${active ? "bg-emerald-500" : "bg-slate-600"}`}
-      />
-      {label}
-    </button>
   );
 }
