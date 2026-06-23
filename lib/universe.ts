@@ -6,12 +6,13 @@ export interface UniverseFile {
   sp500: string[];
   nasdaq100: string[];
   etfs: string[];
+  extra?: string[]; // liquid common shares beyond the indices (scripts/build-universe.ts)
 }
 
 const data = universe as unknown as UniverseFile;
 
 const merged = Array.from(
-  new Set<string>([...data.sp500, ...data.nasdaq100, ...data.etfs])
+  new Set<string>([...data.sp500, ...data.nasdaq100, ...data.etfs, ...(data.extra ?? [])])
 ).sort();
 
 export const UNIVERSE: readonly string[] = Object.freeze(merged);

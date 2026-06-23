@@ -89,6 +89,36 @@ const TP_CLEARANCE_ATR = 0.25; // the 1:2 TP must sit at least this far below re
 const RR_TARGET = 2; // strict 1:2 reward:risk
 const MIN_BARS = 60; // EMA(60) seed is the binding minimum; short ribbon + AO + ATR need fewer
 
+// Tunable knobs for the SL/TP construction (and a couple of speed/gate switches).
+// The DEFAULTS reproduce the live scanner's behavior exactly, so callers that
+// pass nothing — like the production /api/scan-gmma route — are unaffected. The
+// backtest/sweep tooling overrides these to explore the strategy space.
+export interface GmmaEvalOptions {
+  supportLookback: number; // bars used to find the support low (stopAnchor="support")
+  slAtrBuffer: number; // ATR multiples placed below the anchor as the raw stop
+  stopAnchor: "support" | "ema30"; // anchor the SL to the recent low, or to EMA30 (slower)
+  minStopAtr: number | null; // floor risk-per-share at this many ATR (null = no floor)
+  minStopPct: number | null; // floor risk-per-share at this % of price (null = no floor)
+  resistanceLookback: number; // bars used to find the resistance high (TP-reachability gate)
+  tpClearanceAtr: number; // the TP must sit at least this many ATR below resistance
+  rrTarget: number; // reward:risk multiple used to project the TP from risk
+  enforceTpReachable: boolean; // gate setups whose TP lands above recent resistance
+  skipChartBars: boolean; // skip the 90-bar chart series (backtest doesn't need it)
+}
+
+export const GMMA_EVAL_DEFAULTS: GmmaEvalOptions = {
+  supportLookback: SUPPORT_LOOKBACK,
+  slAtrBuffer: SL_ATR_BUFFER,
+  stopAnchor: "support",
+  minStopAtr: null,
+  minStopPct: null,
+  resistanceLookback: RESISTANCE_LOOKBACK,
+  tpClearanceAtr: TP_CLEARANCE_ATR,
+  rrTarget: RR_TARGET,
+  enforceTpReachable: true,
+  skipChartBars: false,
+};
+
 // Build the enriched chart series for the last ~90 bars. The EMA/AO series are
 // computed over the FULL history first (so values inside the lookback window are
 // fully warmed up), then sliced to the visible window.
@@ -139,7 +169,9 @@ function buildGmmaChartBars(
 export function evaluateGmmaTicker(
   ticker: string,
   bars: readonly DailyBar[],
+  opts?: Partial<GmmaEvalOptions>,
 ): GmmaScanResult | null {
+  const o: GmmaEvalOptions = { ...GMMA_EVAL_DEFAULTS, ...opts };
   if (bars.length < MIN_BARS) return null;
 
   const closes = bars.map((b) => b.c);
@@ -181,22 +213,38 @@ export function evaluateGmmaTicker(
   const atr14 = atr(highs, lows, closes, ATR_PERIOD);
   if (atr14 === null || atr14 <= 0) return null;
 
-  // Stop: just below the recent support (pullback low) — a real level — with a
-  // small ATR buffer so a normal wiggle doesn't tag it exactly.
-  const supportLow = Math.min(...lows.slice(-SUPPORT_LOOKBACK));
-  const targetSl = supportLow - SL_ATR_BUFFER * atr14;
-  if (targetSl >= close) return null;
+  // Stop anchor: either just below the recent support (pullback low) — a real
+  // level — or to the slower EMA30 so a normal pullback wiggle doesn't tag it.
+  // A small ATR buffer sits below the anchor either way.
+  const supportLow =
+    o.stopAnchor === "ema30" ? e30 : Math.min(...lows.slice(-o.supportLookback));
+  let targetSl = supportLow - o.slAtrBuffer * atr14;
+  let riskPerShare = close - targetSl;
 
-  const riskPerShare = close - targetSl;
-  const targetTp = close + RR_TARGET * riskPerShare; // strict 1:2 on price
+  // Optional minimum-stop floor: widen the stop so micro-stops (a 0.5% SL that
+  // any noise tags) don't bleed the win rate. Takes the larger of the ATR and %
+  // floors when both are set. Widening risk also widens the projected TP.
+  const floors: number[] = [];
+  if (o.minStopAtr !== null) floors.push(o.minStopAtr * atr14);
+  if (o.minStopPct !== null) floors.push((o.minStopPct / 100) * close);
+  const minRisk = floors.length ? Math.max(...floors) : 0;
+  if (riskPerShare < minRisk) {
+    riskPerShare = minRisk;
+    targetSl = close - riskPerShare;
+  }
+  if (targetSl >= close || riskPerShare <= 0) return null;
 
-  // Realism gate: the 1:2 target must sit below the recent resistance (a price
-  // the stock actually traded), with a small clearance so it fills before the
-  // wall. If the 1:2 lands above recent resistance, it's not reachable → skip.
-  const resistanceHigh = Math.max(...highs.slice(-RESISTANCE_LOOKBACK));
-  if (targetTp > resistanceHigh - TP_CLEARANCE_ATR * atr14) return null;
+  const targetTp = close + o.rrTarget * riskPerShare; // projected reward:risk on price
 
-  const rrRatio = RR_TARGET; // 2 by construction
+  // Realism gate: the target must sit below the recent resistance (a price the
+  // stock actually traded), with a small clearance so it fills before the wall.
+  // If the target lands above recent resistance, it's not reachable → skip.
+  const resistanceHigh = Math.max(...highs.slice(-o.resistanceLookback));
+  if (o.enforceTpReachable && targetTp > resistanceHigh - o.tpClearanceAtr * atr14) {
+    return null;
+  }
+
+  const rrRatio = o.rrTarget;
 
   return {
     ticker,
@@ -223,7 +271,7 @@ export function evaluateGmmaTicker(
     riskPerShare: round2(riskPerShare),
     rrRatio: round2(rrRatio),
     indices: getIndicesFor(ticker),
-    chartBars: buildGmmaChartBars(bars, closes, highs, lows),
+    chartBars: o.skipChartBars ? [] : buildGmmaChartBars(bars, closes, highs, lows),
     breakdown: {
       rule1TrendAlignedPass: rule1,
       rule2PullbackToShortRibbonPass: rule2,

@@ -54,6 +54,31 @@ function chunk<T>(arr: readonly T[], size: number): T[][] {
   return out;
 }
 
+const MAX_CONCURRENCY = 8; // keep batch bursts under Alpaca's ~200 req/min cap
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// Run `task` over `items` with at most `concurrency` in flight at once.
+async function mapPool<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  task: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await task(items[i]);
+    }
+  }
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, worker);
+  await Promise.all(workers);
+  return out;
+}
+
 function isoDaysAgo(days: number): string {
   const d = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
@@ -62,7 +87,8 @@ function isoDaysAgo(days: number): string {
 async function fetchOneBatch(
   symbols: string[],
   start: string,
-  creds: { keyId: string; secret: string; baseUrl: string }
+  creds: { keyId: string; secret: string; baseUrl: string },
+  end?: string,
 ): Promise<Record<string, DailyBar[]>> {
   const out: Record<string, DailyBar[]> = {};
   let pageToken: string | undefined;
@@ -76,17 +102,29 @@ async function fetchOneBatch(
       feed: "iex",
       limit: "10000",
     });
+    if (end) params.set("end", end);
     if (pageToken) params.set("page_token", pageToken);
 
     const url = `${creds.baseUrl}/v2/stocks/bars?${params.toString()}`;
-    const res = await fetch(url, {
-      headers: {
-        "APCA-API-KEY-ID": creds.keyId,
-        "APCA-API-SECRET-KEY": creds.secret,
-        Accept: "application/json",
-      },
-      cache: "no-store",
-    });
+
+    // Fetch with bounded retry on 429 (rate limit), honoring Retry-After.
+    let res: Response;
+    for (let attempt = 0; ; attempt++) {
+      res = await fetch(url, {
+        headers: {
+          "APCA-API-KEY-ID": creds.keyId,
+          "APCA-API-SECRET-KEY": creds.secret,
+          Accept: "application/json",
+        },
+        cache: "no-store",
+      });
+      if (res.status !== 429 || attempt >= 5) break;
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter * 1000
+        : Math.min(1000 * 2 ** attempt, 16000); // 1s, 2s, 4s, 8s, 16s
+      await sleep(waitMs);
+    }
 
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -174,7 +212,8 @@ export async function fetchActiveEquities(): Promise<AlpacaAsset[]> {
 }
 
 export async function fetchDailyBars(
-  symbols: readonly string[]
+  symbols: readonly string[],
+  lookbackDays: number = BARS_LOOKBACK_DAYS,
 ): Promise<Record<string, DailyBar[]>> {
   const creds = getCreds();
   if (!creds) {
@@ -183,11 +222,40 @@ export async function fetchDailyBars(
     );
   }
 
-  const start = isoDaysAgo(BARS_LOOKBACK_DAYS);
+  const start = isoDaysAgo(lookbackDays);
   const batches = chunk(symbols, CHUNK_SIZE);
 
-  const results = await Promise.all(
-    batches.map((batch) => fetchOneBatch(batch, start, creds))
+  const results = await mapPool(batches, MAX_CONCURRENCY, (batch) =>
+    fetchOneBatch(batch, start, creds),
+  );
+
+  const merged: Record<string, DailyBar[]> = {};
+  for (const r of results) {
+    for (const [sym, bars] of Object.entries(r)) {
+      merged[sym] = bars;
+    }
+  }
+  return merged;
+}
+
+// Like fetchDailyBars but over an explicit historical window [start, end]
+// (YYYY-MM-DD). Used by the backtest tooling to test specific periods (e.g. the
+// 2022 bear) rather than only "N days back from today".
+export async function fetchDailyBarsRange(
+  symbols: readonly string[],
+  start: string,
+  end?: string,
+): Promise<Record<string, DailyBar[]>> {
+  const creds = getCreds();
+  if (!creds) {
+    throw new AlpacaConfigError(
+      "Missing ALPACA_API_KEY_ID / ALPACA_SECRET_KEY. Set them in .env.local."
+    );
+  }
+
+  const batches = chunk(symbols, CHUNK_SIZE);
+  const results = await mapPool(batches, MAX_CONCURRENCY, (batch) =>
+    fetchOneBatch(batch, start, creds, end),
   );
 
   const merged: Record<string, DailyBar[]> = {};
