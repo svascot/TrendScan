@@ -35,7 +35,7 @@ The fee-covered plan makes your net loss equal your budgeted risk ($126 = 1%) an
 
 ## What it does
 
-- Scans a curated universe of ~600 large-cap US equities + premium ETFs (S&P 500, Nasdaq 100, SPY/QQQ/SCHD/JEPQ, sector SPDRs) against four hard rules every visit.
+- Scans a liquid universe of ~2,500 US common shares + ETFs (S&P 500, Nasdaq 100, sector SPDRs, plus ~2,000 additional liquid names sourced by `build-universe`) against four hard rules every visit.
 - Ranks the survivors with a transparent 3-factor composite score.
 - Runs a second, independent **GMMA scanner** over the same universe — a Guppy Multiple Moving Average dual ribbon (short/trader EMAs 3/5/8/10/12/15 above long/investor EMAs 30/35/40/45/50/60) with a pullback-into-the-short-ribbon entry and an Awesome Oscillator confirmation (bullish saucer or zero-line cross). Each match ships a stop just below the recent support (pullback low, buffered by a fraction of ATR) and a **strict 1:2** take-profit (entry + 2×risk) — kept only when that target lands below the recent resistance, so it's realistically reachable. It also ships a position size in shares from the user's money-management settings (total capital × risk per trade). Both the stop and target come in **fee-covered** variants that bake in the round-trip broker fee so the net 1:2 survives commissions (see the worked example above).
 - Lets each user maintain a personal **watchlist** of arbitrary US equities — autocompleted from Alpaca's tradable-asset feed — and runs the same scoring engine against it. Failing setups stay visible with their score halved so you can watch them recover.
@@ -48,7 +48,7 @@ The fee-covered plan makes your net loss equal your budgeted risk ($126 = 1%) an
 
 | Source | Detail |
 | --- | --- |
-| Universe | `lib/universe.json` — S&P 500 (~500), Nasdaq 100 (~100), 16 premium ETFs. Deduped at load time → ~520 unique symbols. |
+| Universe | `lib/universe.json` — S&P 500 + Nasdaq 100 + premium ETFs + a liquid `extra` bucket built by `scripts/build-universe.ts`. Deduped at load time → ~2,500 unique symbols. |
 | Price data | Alpaca Markets `/v2/stocks/bars` — daily bars, IEX feed (free tier), ~250 trading days of history fetched per call. |
 | Strategy parameters | Loaded per-user from `public.user_settings` (TP %, SL %, RSI band, MA lengths, Top-N). Defaults live in `lib/strategy.ts`. |
 | Query filters | `?limit=`, `?exclude=AAPL,TSLA`, `?risk=low\|med\|high` on `/api/scan`. |
@@ -196,7 +196,7 @@ FUNCTION WILDER_RSI(closes, period = 14):
 
 ### Performance notes
 
-- Bars are fetched in **parallel batches of 100 symbols** against Alpaca's multi-symbol endpoint — the full ~520-ticker scan completes in 3–6 s on a warm route.
+- Bars are fetched in **parallel batches of 100 symbols** (bounded concurrency) against Alpaca's multi-symbol endpoint — the full ~2,500-ticker scan completes in ~4–8 s on a warm route.
 - Results are cached in process for **1 hour** per `(risk, exclude)` key. Multiple page loads / users hitting the same URL within an hour don't re-query Alpaca.
 - All indicators are pure functions in `lib/indicators.ts` — they're trivially unit-testable without network or DB.
 

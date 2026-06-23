@@ -164,7 +164,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
           Daily Scanner Report
         </p>
         <h1 className="text-xl font-semibold tracking-tight text-slate-50 sm:text-2xl">
-          Market Universe: S&amp;P 500 &amp; Nasdaq 100
+          Market Universe: ~2,500 Liquid US Stocks &amp; ETFs
         </h1>
         <p className="text-sm text-slate-400">
           Showing the absolute highest-ranked mathematical setups.
@@ -388,7 +388,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
                           aria-hidden
                           className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400"
                         />
-                        Running scanner across ~600 tickers — this can take 5–10 seconds…
+                        Running scanner across ~2,500 tickers — this can take 5–10 seconds…
                       </span>
                     </td>
                   </tr>

@@ -325,7 +325,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
                           aria-hidden
                           className="h-4 w-4 animate-spin rounded-full border-2 border-slate-700 border-t-emerald-400"
                         />
-                        Running GMMA scanner across ~600 tickers — this can take 5–10 seconds…
+                        Running GMMA scanner across ~2,500 tickers — this can take 5–10 seconds…
                       </span>
                     </td>
                   </tr>
