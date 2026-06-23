@@ -266,6 +266,108 @@ Clicking **+ Add** snapshots the entry, structural SL, and the **fee-adjusted** 
 
 Same model as `/api/scan`: in-process cache keyed by `gmma|<exclude>`, 1-hour TTL upper bound, `?maxAgeSeconds=` per-request freshness (default 5 minutes), top-N slicing applied after ranking.
 
+## Backtesting
+
+The GMMA strategy ships with a historical backtesting harness — a "time machine" that replays the scanner day-by-day over years of past bars to answer the only question that matters: **does this strategy have positive expectancy?** The engine is a pure, IO-free module (`lib/backtest.ts`) that reuses the *exact same* `evaluateGmmaTicker` the live scanner uses, so a backtested signal fires on identical rules to a real one — no separate, drifting re-implementation. It's driven by runnable scripts under `scripts/`, not wired into the app, because the computation is heavy (hundreds of symbols × hundreds of days) and benefits from running offline where you can iterate parameters in seconds.
+
+### What a backtest does here
+
+For every symbol and every historical day, it asks: *"Would the scanner have fired a signal if this bar were today?"* — evaluating the GMMA rules against **only the bars up to and including that day** (no lookahead). When a signal fires, it simulates the trade:
+
+1. **Enter** at the signal bar's close.
+2. **Walk forward** bar by bar, checking each day's high/low against the structural SL and the 1:2 TP.
+3. **Exit** on the first level touched, or at the close after a maximum hold (timeout) if neither is hit.
+4. **Record** the result as an **R-multiple** — the realised reward in units of the initial risk (`entry − stop`) — net of commission.
+
+### No lookahead, conservative fills
+
+The simulation is deliberately pessimistic, so the resulting expectancy errs low rather than flattering the strategy:
+
+| Assumption | Rule |
+| --- | --- |
+| No lookahead | A signal sees only bars up to its own day; the outcome uses the bars *after* it. |
+| Same-bar SL **and** TP touch | Assume the **stop** filled (worst case) — the stop is always checked before the target. |
+| Gap through the stop | Fill at the (worse) **open**, not the stop price — models real gap risk. |
+| Gap past the target | Fill at the open if it gapped beyond — never better than reality. |
+| One position per ticker | No pyramiding or re-entry while a position is open. |
+| Commission | Folded into R as a fraction of notional **per side**, so it's position-size-independent. |
+
+Because fees are a fraction of notional on both legs, the share count cancels and the net R is independent of dollar sizing:
+
+$$R_\text{net} = \frac{\text{exit} - \text{entry}}{\text{risk}} - \text{feeRate} \cdot \frac{\text{entry} + \text{exit}}{\text{risk}} \qquad \text{risk} = \text{entry} - \text{stop}$$
+
+### Exit modes
+
+The default (`fixed`) matches the live strategy: a fixed structural stop and a fixed 1:2 target. Two trailing alternatives are available for experimentation (they underperformed `fixed` in testing — see findings):
+
+| Mode | Behavior |
+| --- | --- |
+| `fixed` | Fixed SL + fixed 1:2 TP (the live behavior). |
+| `trail` | No fixed TP; a chandelier stop trails at `highestHigh − k·ATR`, letting winners run. |
+| `be_trail` | Start at the structural stop; move to breakeven after price reaches +1R, then trail. |
+
+### Metrics
+
+Each run aggregates a flat list of trades into headline metrics plus a chronological equity curve (cumulative R by exit date):
+
+- **Trades** & **win rate** (by net R > 0)
+- **Avg R / trade** — the expectancy; positive means the strategy makes money over time
+- **Profit factor** — gross R won ÷ gross R lost
+- **Max drawdown (R)** — deepest peak-to-trough of the cumulative-R curve
+- **Avg hold** (bars) and the exit breakdown (TP / SL / trail / timeout)
+
+### The engine & scripts
+
+All scripts read Alpaca credentials from `.env.local` and run via `tsx`. Run them from the project root:
+
+| Command | What it does |
+| --- | --- |
+| `npm run backtest` | Single run over the full universe with the live config → console summary + `backtest-output/backtest-trades.csv` + `backtest-equity.json`. |
+| `npm run sweep` | Grid over stop-construction variants (min-stop floor, anchor). |
+| `npm run sweep2` | Grid over **market regime** (index > MA200) × **exit mode**. |
+| `npm run sweeprr` | Sweep the reward:risk multiple (1:1.5 → 1:3) on a chosen config. |
+| `npm run build-universe` | Rebuild `lib/universe.json` from Alpaca's active equities, filtered by liquidity (see below). |
+
+Common flags (pass after `--`):
+
+| Flag | Applies to | Default | Notes |
+| --- | --- | --- | --- |
+| `--lookback <days>` | all | 730 | Calendar days of history to pull. |
+| `--start` / `--end` | sweeps | — | Explicit window, e.g. `--start 2021-01-01 --end 2023-12-31` (tests a bear market). |
+| `--hold <days>` | all | 10 | Max bars to hold before a timeout exit. |
+| `--symbols <list>` | all | full universe | Comma-separated subset for a quick run. |
+| `--gate <on\|off>` | `sweeprr` | off | The TP-reachability gate (the strategy's quality filter). |
+| `--regime <spy\|qqq\|both\|none>` | `sweeprr` | spy | Only go long when the chosen index is above its 200-day MA. |
+
+```text
+PROCEDURE simulate_ticker(ticker, bars, params):
+    i ← warmupBars
+    WHILE i < lastBar:
+        signal ← evaluateGmmaTicker(ticker, bars[0 .. i])   # no lookahead
+        IF NOT signal: i ← i + 1; CONTINUE
+        IF regime_filter AND market_not_uptrend(bars[i].date): i ← i + 1; CONTINUE
+
+        entry ← bars[i].close ; sl ← signal.SL ; tp ← signal.TP
+        risk  ← entry − sl
+        FOR j = i+1 .. min(i + maxHold, lastBar):
+            IF bars[j].low  ≤ sl: exit at (gap? open : sl) AS "sl";  BREAK   # stop first
+            IF bars[j].high ≥ tp: exit at (gap? open : tp) AS "tp";  BREAK
+        IF no exit: exit at bars[min(i+maxHold,last)].close AS "timeout"
+
+        record_trade(R = (exit − entry)/risk − fees)
+        i ← exitIndex + 1                                    # no overlapping trades
+```
+
+### What the harness revealed
+
+Running the strategy across both a bull window (2024→2026) and a bear-inclusive one (2021→2023) produced a clear, sometimes counter-intuitive verdict:
+
+- **The strict entry gate *is* the edge.** Loosening the TP-reachability gate produced ~6× more trades that looked great in the bull market but **flipped negative in the bear** — that "edge" was market beta, not alpha. Widening stops and trailing exits also underperformed the fixed 1:2.
+- **More trades came from a bigger universe, not looser filters.** The honest lever was expanding the symbol list at the *same* quality bar (`build-universe` → ~520 to ~2,500 liquid common shares, excluding leveraged/inverse products). This lifted the robust config to **~280 trades and positive expectancy in *both* regimes** (vs ~39 trades before).
+- **The deployable config is the live one:** strict gate + fixed 1:2.
+
+**Caveats (so you trust the number, not over-trust it):** the universe is built from *currently* active names (survivorship bias — delisted losers aren't in it); long-only momentum carries market beta; and Alpaca's free IEX feed sees only a fraction of true volume, so the liquidity filter is a rough proxy.
+
 ## Stack
 
 - Next.js 14 (App Router) + TypeScript + Tailwind CSS
@@ -431,13 +533,20 @@ lib/
 ├── indicators.ts            # SMA, Wilder RSI(14), ATR, ROC, EMA, Awesome Oscillator
 ├── strategy.ts              # Defaults, zod schema, TP/SL helpers, row mappers
 ├── scanner.ts               # Rule eval + multi-factor scoring (scanner + watchlist)
-├── gmma-scanner.ts          # GMMA fan + AO eval, structural SL, 1:2 TP, ranking
-├── alpaca.ts                # Batched bars fetcher + active-equities fetcher
-├── universe.ts              # Deduped universe loader
-├── universe.json            # S&P 500 + Nasdaq 100 + premium ETFs
+├── gmma-scanner.ts          # GMMA fan + AO eval, structural SL, 1:2 TP, ranking (parameterizable)
+├── backtest.ts              # Pure GMMA backtest engine — simulate, metrics, regime filter
+├── alpaca.ts                # Batched bars fetcher (concurrency + 429 retry, date ranges) + active equities
+├── universe.ts              # Deduped universe loader (sp500 + nasdaq100 + etfs + extra)
+├── universe.json            # S&P 500 + Nasdaq 100 + ETFs + liquid common shares (`extra`)
 ├── format.ts                # eToro link, name/initials, formatters
 ├── supabase/{server,client,middleware}.ts
 └── db/{settings,trades}.ts
+scripts/                     # Backtest tooling (tsx) — see "Backtesting"
+├── backtest-gmma.ts         # Single backtest run → CSV + equity JSON
+├── sweep-gmma.ts            # Stop-construction grid
+├── sweep-regime-exits.ts    # Regime × exit-mode grid
+├── sweep-rr.ts              # Reward:risk sweep
+└── build-universe.ts        # Rebuild universe.json from Alpaca by liquidity
 middleware.ts                # Route guard
 supabase/migrations/         # SQL DDL
 ```
