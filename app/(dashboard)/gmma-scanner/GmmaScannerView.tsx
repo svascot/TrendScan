@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { etoroLink, formatPrice } from "@/lib/format";
+import { fireSetupNotification } from "@/lib/notifications";
 import type { StrategySettings } from "@/lib/strategy";
 import type { GmmaScanResponse, GmmaScanResult } from "@/lib/gmma-scanner";
 import { BracketCell, EmptyState, SkeletonCards } from "../_components/setup-card";
@@ -28,6 +29,12 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
   const isMobile = useIsMobile();
   const refreshMinutes = Math.max(1, settings.refreshIntervalMinutes);
   const riskUsd = totalCapital * (settings.riskPerTradePct / 100);
+
+  // Tracks which tickers we've already alerted on, so each setup notifies once.
+  // Seeded silently on the first scan so opening the page doesn't blast every
+  // current setup at once.
+  const seenTickersRef = useRef<Set<string>>(new Set());
+  const seededRef = useRef(false);
 
   // The GMMA scanner always analyses the full universe — no index filtering.
   const filteredStocks = useMemo(() => data?.results ?? [], [data]);
@@ -104,6 +111,42 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
     if (!fresh) setSelected(null);
     else if (fresh !== selected) setSelected(fresh);
   }, [data, selected]);
+
+  // Fire a browser notification for each setup that's new since the last scan.
+  // Always keep the seen-set current (even when notifications are off) so toggling
+  // it on mid-session doesn't replay setups that were already on screen.
+  useEffect(() => {
+    if (!data) return;
+    const seen = seenTickersRef.current;
+
+    if (!seededRef.current) {
+      seededRef.current = true;
+      data.results.forEach((r) => seen.add(r.ticker));
+      return;
+    }
+
+    if (settings.notificationsEnabled) {
+      for (const r of data.results) {
+        if (seen.has(r.ticker)) continue;
+        const shares = computeShares(riskUsd, r.close, r.targetSl, totalCapital);
+        const slFee = feeAdjustedSl(r.targetSl, settings.brokerFeeUsd, shares);
+        const tpFee = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
+        const feeOk = feePlanValid(r.close, slFee);
+        fireSetupNotification(
+          {
+            ticker: r.ticker,
+            close: r.close,
+            target: feeOk ? tpFee : r.targetTp,
+            stop: feeOk ? slFee : r.targetSl,
+            shares,
+          },
+          () => setSelected(r),
+        );
+      }
+    }
+
+    data.results.forEach((r) => seen.add(r.ticker));
+  }, [data, settings.notificationsEnabled, settings.brokerFeeUsd, riskUsd, totalCapital]);
 
   const detailOpen = selected !== null;
   const selectedShares = selected

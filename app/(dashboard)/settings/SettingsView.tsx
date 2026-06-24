@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -8,6 +8,12 @@ import {
   strategySchema,
   type StrategySettings,
 } from "@/lib/strategy";
+import {
+  fireSetupNotification,
+  notificationPermission,
+  requestNotificationPermission,
+  type NotificationPermissionState,
+} from "@/lib/notifications";
 import { SettingHelp } from "@/components/ui/setting-help";
 import type { SettingHelpId } from "@/lib/constants/settings-education";
 
@@ -50,9 +56,16 @@ function toForm(s: StrategySettings): FormState {
 export function SettingsView({ initial }: Props) {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(toForm(initial));
+  const [notificationsEnabled, setNotificationsEnabled] = useState(initial.notificationsEnabled);
+  const [permission, setPermission] = useState<NotificationPermissionState>("default");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  // Notification permission can only be read on the client.
+  useEffect(() => {
+    setPermission(notificationPermission());
+  }, []);
 
   function update<K extends keyof FormState>(k: K, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
@@ -60,8 +73,65 @@ export function SettingsView({ initial }: Props) {
 
   function resetDefaults() {
     setForm(toForm(STRATEGY_DEFAULTS));
+    setNotificationsEnabled(STRATEGY_DEFAULTS.notificationsEnabled);
     setInfo(null);
     setError(null);
+  }
+
+  // Fire a sample notification and report back, so a silent failure (e.g. macOS
+  // blocking Chrome at the system level) is visible instead of "nothing happens".
+  function onSendTest() {
+    setError(null);
+    setInfo(null);
+    const perm = notificationPermission();
+    setPermission(perm);
+    if (perm !== "granted") {
+      setError("Notification permission isn't granted in this browser.");
+      return;
+    }
+    const ok = fireSetupNotification({
+      ticker: "AAPL",
+      close: 192.34,
+      target: 200.18,
+      stop: 188.42,
+      shares: 32,
+    });
+    if (ok) {
+      setInfo(
+        "Test sent. If you didn't see it, macOS is likely hiding it: open System Settings → " +
+          "Notifications → Google Chrome, turn it on, and make sure Do Not Disturb / Focus is off.",
+      );
+    } else {
+      setError(
+        "The browser couldn't show the notification. On macOS, enable it in System Settings → " +
+          "Notifications → Google Chrome.",
+      );
+    }
+  }
+
+  // Turning the toggle on prompts for browser permission. If the user blocks it
+  // (or the browser can't), keep the toggle off and explain why.
+  async function onToggleNotifications(next: boolean) {
+    setError(null);
+    setInfo(null);
+    if (!next) {
+      setNotificationsEnabled(false);
+      return;
+    }
+    const result = await requestNotificationPermission();
+    setPermission(result);
+    if (result === "granted") {
+      setNotificationsEnabled(true);
+    } else {
+      setNotificationsEnabled(false);
+      setError(
+        result === "denied"
+          ? "Chrome is blocking notifications for this site. Enable them in the address-bar site settings (🔒 icon), then try again."
+          : result === "unsupported"
+            ? "This browser doesn't support notifications."
+            : "Notification permission was not granted.",
+      );
+    }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -82,6 +152,7 @@ export function SettingsView({ initial }: Props) {
       totalCapital: parseFloat(form.totalCapital),
       riskPerTradePct: parseFloat(form.riskPerTradePct),
       brokerFeeUsd: parseFloat(form.brokerFeeUsd),
+      notificationsEnabled,
     });
 
     if (!parsed.success) {
@@ -108,6 +179,7 @@ export function SettingsView({ initial }: Props) {
         total_capital: parsed.data.totalCapital,
         risk_per_trade_pct: parsed.data.riskPerTradePct,
         broker_fee_usd: parsed.data.brokerFeeUsd,
+        notifications_enabled: parsed.data.notificationsEnabled,
       };
       const { error } = await supabase
         .from("user_settings")
@@ -219,6 +291,61 @@ export function SettingsView({ initial }: Props) {
             step="1"
           />
         </Section>
+
+        <section>
+          <div className="flex items-center gap-1.5">
+            <h2 className="font-mono text-xs uppercase tracking-widest text-slate-400">
+              Notifications
+            </h2>
+          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Get a Chrome notification for each new GMMA setup that appears while the dashboard is
+            open (even in a background tab). Chrome must stay open for these to arrive.
+          </p>
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+            <div className="min-w-0">
+              <p className="text-sm text-slate-200">Browser notifications</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {permission === "denied"
+                  ? "Blocked by the browser — enable in site settings (🔒)."
+                  : permission === "unsupported"
+                    ? "Not supported in this browser."
+                    : notificationsEnabled
+                      ? "On — alerts for new setups."
+                      : "Off."}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {notificationsEnabled && permission === "granted" && (
+                <button
+                  type="button"
+                  onClick={onSendTest}
+                  className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 transition hover:border-emerald-400 hover:text-emerald-300"
+                >
+                  Send test
+                </button>
+              )}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={notificationsEnabled}
+                aria-label="Toggle browser notifications"
+                onClick={() => onToggleNotifications(!notificationsEnabled)}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+                  notificationsEnabled ? "bg-emerald-500" : "bg-slate-700"
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    notificationsEnabled ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        </section>
 
         {error && (
           <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
