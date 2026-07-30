@@ -1,5 +1,6 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 export function createClient() {
   const cookieStore = cookies();
@@ -30,3 +31,15 @@ export function createClient() {
     }
   );
 }
+
+// Request-scoped, deduplicated current-user lookup. Wrapping in React's cache()
+// means several server components in the same render (e.g. the marketing layout
+// and the page inside it) share one Supabase round-trip instead of each firing
+// their own auth.getUser().
+export const getUser = cache(async () => {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user;
+});

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { computePositionShares, computeTpSl, type StrategySettings } from "@/lib/strategy";
 import { etoroLink, formatPrice } from "@/lib/format";
+import { COMMISSION_DISCLAIMER } from "@/lib/constants/disclaimers";
 import type { ScanResult } from "@/lib/scanner";
 import { BracketCell, EmptyState, SkeletonCards } from "../_components/setup-card";
 import { useIsMobile } from "../_components/use-is-mobile";
@@ -301,8 +302,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
       <p className="text-xs text-slate-500">
         Trade setups calculated with your personal targets:{" "}
         <span className="text-emerald-400">+{(settings.tpPct * 100).toFixed(1)}% TP</span> /{" "}
-        <span className="text-red-400">-{(settings.slPct * 100).toFixed(1)}% SL</span>. Prices and
-        P&amp;L are gross of broker commissions — factor your fees in yourself. Edit in{" "}
+        <span className="text-red-400">-{(settings.slPct * 100).toFixed(1)}% SL</span>. {COMMISSION_DISCLAIMER} Edit in{" "}
         <a href="/settings" className="text-emerald-400 hover:underline" onClick={(e) => { e.preventDefault(); router.push("/settings"); }}>Settings</a>.
       </p>
 

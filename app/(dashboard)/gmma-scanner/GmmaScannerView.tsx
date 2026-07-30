@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { etoroLink, formatPrice } from "@/lib/format";
 import { fireSetupNotification } from "@/lib/notifications";
-import type { StrategySettings } from "@/lib/strategy";
+import { computeShares, type StrategySettings } from "@/lib/strategy";
+import { COMMISSION_DISCLAIMER } from "@/lib/constants/disclaimers";
 import type { GmmaScanResponse, GmmaScanResult } from "@/lib/gmma-scanner";
 import { BracketCell, EmptyState, SkeletonCards } from "../_components/setup-card";
 import { useIsMobile } from "../_components/use-is-mobile";
@@ -310,8 +311,7 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
         <span className="text-emerald-400">${totalCapital.toLocaleString()}</span> capital ×{" "}
         <span className="text-emerald-400">{settings.riskPerTradePct.toFixed(2)}%</span> per trade
         (= ${riskUsd.toFixed(2)} risk / trade), capped at what your capital can buy
-        (fractional shares). Prices and P&amp;L are gross of broker commissions — factor your fees in
-        yourself. Edit in{" "}
+        (fractional shares). {COMMISSION_DISCLAIMER} Edit in{" "}
         <a href="/settings" className="text-emerald-400 hover:underline" onClick={(e) => { e.preventDefault(); router.push("/settings"); }}>Settings</a>.
       </p>
     </div>
@@ -444,15 +444,6 @@ function DecisionCard({
   );
 }
 
-// eToro supports fractional shares: size by risk, capped by what the capital
-// can actually buy. Rounded down to 2 decimals so neither limit is exceeded.
-function computeShares(riskUsd: number, entry: number, stop: number, capitalUsd: number): number {
-  const perShare = entry - stop;
-  if (perShare <= 0 || riskUsd <= 0 || entry <= 0) return 0;
-  const shares = Math.min(riskUsd / perShare, capitalUsd / entry);
-  return Math.floor(shares * 100) / 100;
-}
-
 function SharesBadge({ shares }: { shares: number }) {
   if (shares <= 0) {
     return (
@@ -526,9 +517,7 @@ function TpSlExplainer() {
 
         <p className="text-xs leading-relaxed text-slate-500">
           If the strict 1:2 TP would land <em>above</em> the recent resistance, the setup is skipped —
-          that target isn&rsquo;t realistically reachable. These figures are{" "}
-          <span className="text-slate-400">gross of broker commissions</span>; factor your own fees in
-          when you size the trade.
+          that target isn&rsquo;t realistically reachable. {COMMISSION_DISCLAIMER}
         </p>
       </div>
     </details>

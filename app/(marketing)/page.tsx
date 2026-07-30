@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { GmmaDualChart, LONG_RIBBON, RibbonLegendRow, SHORT_RIBBON } from "@/components/gmma/GmmaDualChart";
 import { EXAMPLE_GMMA } from "@/lib/gmma-example";
-import { createClient } from "@/lib/supabase/server";
+import { getUser } from "@/lib/supabase/server";
 
 interface RuleCard {
   n: string;
@@ -40,10 +40,7 @@ const RULES: RuleCard[] = [
 
 export default async function MarketingPage() {
   const ex = EXAMPLE_GMMA;
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getUser();
   return (
     <main>
       {/* ───────── Hero ───────── */}

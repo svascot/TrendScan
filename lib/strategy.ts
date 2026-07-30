@@ -68,6 +68,21 @@ export function computePositionShares(entry: number, settings: StrategySettings)
   return Math.floor(riskBudget / riskPerShare);
 }
 
+// Risk-budget position sizing for the GMMA scanner, capped by what the capital
+// can actually buy. eToro supports fractional shares, so this rounds down to 2
+// decimals (never up) so neither the risk budget nor the capital cap is exceeded.
+export function computeShares(
+  riskUsd: number,
+  entry: number,
+  stop: number,
+  capitalUsd: number,
+): number {
+  const perShare = entry - stop;
+  if (perShare <= 0 || riskUsd <= 0 || entry <= 0) return 0;
+  const shares = Math.min(riskUsd / perShare, capitalUsd / entry);
+  return Math.floor(shares * 100) / 100;
+}
+
 export function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }

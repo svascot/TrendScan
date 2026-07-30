@@ -8,6 +8,7 @@ import {
   SHORT_RIBBON,
 } from "@/components/gmma/GmmaDualChart";
 import { formatPrice } from "@/lib/format";
+import { COMMISSION_DISCLAIMER } from "@/lib/constants/disclaimers";
 import type { GmmaScanResult } from "@/lib/gmma-scanner";
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -219,7 +220,7 @@ function DetailBody({
           </dl>
 
           <p className="mt-3 text-[10px] leading-relaxed text-slate-600">
-            Figures are gross of broker commissions — factor your fees in yourself.
+            {COMMISSION_DISCLAIMER}
           </p>
         </div>
       )}

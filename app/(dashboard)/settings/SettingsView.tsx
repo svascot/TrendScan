@@ -16,6 +16,7 @@ import {
 } from "@/lib/notifications";
 import { SettingHelp } from "@/components/ui/setting-help";
 import type { SettingHelpId } from "@/lib/constants/settings-education";
+import { COMMISSION_DISCLAIMER } from "@/lib/constants/disclaimers";
 
 interface Props {
   initial: StrategySettings;
@@ -233,9 +234,7 @@ export function SettingsView({ initial }: Props) {
           </Section>
 
           <p className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-amber-300/90">
-            Broker commissions are not modelled. The TP/SL prices and projected P&amp;L shown across
-            the app are gross of fees — factor your broker&rsquo;s costs into your own calculations
-            before placing a trade.
+            Broker commissions are not modelled. {COMMISSION_DISCLAIMER}
           </p>
 
           <Section title="Scanner Display" hint="How many ranked setups to show by default.">
