@@ -17,9 +17,6 @@ import type { GmmaScanResult } from "@/lib/gmma-scanner";
 interface PanelProps {
   row: GmmaScanResult;
   shares: number;
-  targetTp: number; // fee-adjusted TP
-  slFee: number; // fee-adjusted SL
-  feeUsd: number; // round-trip broker fee, for net P&L
   onClose: () => void;
 }
 
@@ -151,18 +148,12 @@ function RangeToggle({
 function DetailBody({
   row,
   shares,
-  targetTp,
-  slFee,
-  feeUsd,
   range,
   onRangeChange,
   large = false,
 }: {
   row: GmmaScanResult;
   shares: number;
-  targetTp: number;
-  slFee: number;
-  feeUsd: number;
   range: ChartRange;
   onRangeChange: (r: ChartRange) => void;
   large?: boolean;
@@ -173,16 +164,10 @@ function DetailBody({
   }, [row.chartBars, range]);
 
   const entry = row.close;
-  // The fee-covered plan only exists when the fee-adjusted stop stays below entry.
-  const feeOk = shares > 0 && slFee < entry;
 
-  // Net dollar P&L on the sized position, after the round-trip fee.
-  // No-fee levels: the fee still erodes both sides (so it lands just off 1:2).
-  const netWinNoFee = (row.targetTp - entry) * shares - feeUsd;
-  const netLossNoFee = -((entry - row.targetSl) * shares + feeUsd);
-  // Fee-covered levels: the fee is baked into the prices → a TRUE net 1:2.
-  const netWinFee = (targetTp - entry) * shares - feeUsd; // = 2× risk
-  const netLossFee = -((entry - slFee) * shares + feeUsd); // = −risk
+  // Projected dollar P&L on the sized position, gross of broker commissions.
+  const netWin = (row.targetTp - entry) * shares;
+  const netLoss = -((entry - row.targetSl) * shares);
 
   return (
     <div className="space-y-6 px-5 py-5">
@@ -192,7 +177,7 @@ function DetailBody({
         <Stat label="R:R" value={`1:${row.rrRatio}`} tone="neutral" />
       </dl>
 
-      {/* Two plans: clean 1:2 on price vs. fee-covered (true net 1:2) */}
+      {/* Strict 1:2 plan — SL on support, TP below resistance */}
       <div className="overflow-hidden rounded-lg border border-hairline/60">
         <table className="w-full font-mono text-xs tabular-nums">
           <thead>
@@ -203,15 +188,10 @@ function DetailBody({
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-hairline/40">
-              <td className="px-3 py-2 text-slate-400">No fee</td>
+            <tr>
+              <td className="px-3 py-2 text-slate-400">Strict 1:{row.rrRatio}</td>
               <td className="px-3 py-2 text-right text-emerald-300">${formatPrice(row.targetTp)}</td>
               <td className="px-3 py-2 text-right text-red-300">${formatPrice(row.targetSl)}</td>
-            </tr>
-            <tr>
-              <td className="px-3 py-2 text-slate-400">Fee-covered</td>
-              <td className="px-3 py-2 text-right text-emerald-300">{feeOk ? `$${formatPrice(targetTp)}` : "—"}</td>
-              <td className="px-3 py-2 text-right text-red-300">{feeOk ? `$${formatPrice(slFee)}` : "—"}</td>
             </tr>
           </tbody>
         </table>
@@ -226,38 +206,20 @@ function DetailBody({
         a reachable price the stock has already traded.
       </p>
 
-      {/* Projected net P&L on the sized position */}
+      {/* Projected P&L on the sized position (gross of commissions) */}
       {shares > 0 && (
         <div className="rounded-lg border border-hairline/60 bg-slate-950/40 px-3 py-3">
           <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
-            Projected net P&amp;L · {Number.isInteger(shares) ? shares : shares.toFixed(2)} shares
+            Projected P&amp;L · {Number.isInteger(shares) ? shares : shares.toFixed(2)} shares
           </p>
 
-          <p className="mt-2 font-mono text-[10px] uppercase tracking-wider text-slate-600">No-fee levels</p>
-          <dl className="mt-1 space-y-1 font-mono text-xs tabular-nums">
-            <PnlRow label="If TP hit" value={netWinNoFee} />
-            <PnlRow label="If SL hit" value={netLossNoFee} />
+          <dl className="mt-2 space-y-1 font-mono text-xs tabular-nums">
+            <PnlRow label="If TP hit" value={netWin} />
+            <PnlRow label="If SL hit" value={netLoss} />
           </dl>
 
-          {feeOk ? (
-            <>
-              <p className="mt-3 font-mono text-[10px] uppercase tracking-wider text-emerald-500/80">
-                Fee-covered levels · net 1:{row.rrRatio}
-              </p>
-              <dl className="mt-1 space-y-1 font-mono text-xs tabular-nums">
-                <PnlRow label="If TP hit" value={netWinFee} />
-                <PnlRow label="If SL hit" value={netLossFee} />
-              </dl>
-            </>
-          ) : (
-            <p className="mt-3 text-[11px] leading-relaxed text-amber-400/90">
-              Fee-covered plan unavailable: the ${feeUsd.toFixed(2)} round-trip fee exceeds the
-              amount risked at this position size — size up or skip this trade.
-            </p>
-          )}
-
           <p className="mt-3 text-[10px] leading-relaxed text-slate-600">
-            All figures net of your ${feeUsd.toFixed(2)} round-trip broker fee.
+            Figures are gross of broker commissions — factor your fees in yourself.
           </p>
         </div>
       )}
@@ -385,7 +347,7 @@ function MinimizeIcon({ className = "" }: { className?: string }) {
  * Desktop (md+) master-detail aside — slides in organically from the right and
  * stays sticky beside the table. Mirrors the scanner's SetupDetailPanel offset.
  * ════════════════════════════════════════════════════════════════════════════ */
-export function GMMADetailPanel({ row, shares, targetTp, slFee, feeUsd, onClose }: PanelProps) {
+export function GMMADetailPanel({ row, shares, onClose }: PanelProps) {
   const [shown, setShown] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [range, setRange] = useState<ChartRange>("3M");
@@ -432,7 +394,7 @@ export function GMMADetailPanel({ row, shares, targetTp, slFee, feeUsd, onClose 
             onToggleMaximize={() => setMaximized(false)}
           />
           <div className="flex-1 overflow-y-auto">
-            <DetailBody row={row} shares={shares} targetTp={targetTp} slFee={slFee} feeUsd={feeUsd} range={range} onRangeChange={setRange} large />
+            <DetailBody row={row} shares={shares} range={range} onRangeChange={setRange} large />
           </div>
         </div>
       </div>
@@ -453,7 +415,7 @@ export function GMMADetailPanel({ row, shares, targetTp, slFee, feeUsd, onClose 
         onToggleMaximize={() => setMaximized(true)}
       />
       <div className="flex-1 overflow-y-auto">
-        <DetailBody row={row} shares={shares} targetTp={targetTp} slFee={slFee} feeUsd={feeUsd} range={range} onRangeChange={setRange} />
+        <DetailBody row={row} shares={shares} range={range} onRangeChange={setRange} />
       </div>
     </aside>
   );
@@ -463,7 +425,7 @@ export function GMMADetailPanel({ row, shares, targetTp, slFee, feeUsd, onClose 
  * Mobile (<md) drawer — full-height sheet that slides in from the right over a
  * dimmed backdrop, using the same organic transform/ease as the desktop aside.
  * ════════════════════════════════════════════════════════════════════════════ */
-export function GMMADetailDrawer({ row, shares, targetTp, slFee, feeUsd, onClose }: PanelProps) {
+export function GMMADetailDrawer({ row, shares, onClose }: PanelProps) {
   const [shown, setShown] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [range, setRange] = useState<ChartRange>("3M");
@@ -510,7 +472,7 @@ export function GMMADetailDrawer({ row, shares, targetTp, slFee, feeUsd, onClose
           onToggleMaximize={() => setMaximized((m) => !m)}
         />
         <div className="flex-1 overflow-y-auto">
-          <DetailBody row={row} shares={shares} targetTp={targetTp} slFee={slFee} feeUsd={feeUsd} range={range} onRangeChange={setRange} large={maximized} />
+          <DetailBody row={row} shares={shares} range={range} onRangeChange={setRange} large={maximized} />
         </div>
       </div>
     </div>

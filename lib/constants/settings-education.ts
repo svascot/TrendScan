@@ -31,12 +31,12 @@ export const SETTINGS_EDUCATION = {
     tip: "Keep this at or above 1.5% to ensure you are scanning for 'fast movers' that can quickly hit your targets during a momentum burst.",
   },
   moneyManagement: {
-    title: "Money Management & Broker Fees",
+    title: "Money Management",
     concept:
-      "Total Capital and Risk per Trade size each GMMA position so a stop-out costs exactly your configured % of capital. Broker Fee is the flat USD commission your broker charges for a full round trip (opening plus closing the trade).",
+      "Total Capital and Risk per Trade size each position so a stop-out costs exactly your configured % of capital. Both scanners use these two numbers to compute the suggested share count for every setup.",
     rationale:
-      "Fees silently erode your edge: a winning trade that pays exactly 2:1 gross actually nets less once commissions are deducted. TrendScan raises the GMMA Take Profit by fee ÷ shares, so when the target is hit your profit covers the commission first and still nets 2× the amount you risked.",
-    tip: "Enter the combined cost of entry + exit. If your broker is commission-free, set this to 0 and the TP falls back to the pure 2:1 bracket.",
+      "Fixing the loss per trade to a small slice of capital (1% is the default) is what keeps a losing streak survivable and lets the strict 1:2 reward math compound over many trades instead of one big bet blowing up the account.",
+    tip: "Broker commissions are NOT modelled — the displayed TP/SL and P&L are gross of fees. Factor your broker's costs into your own sizing before you place the trade.",
   },
   movingAverages: {
     title: "Structural Moving Averages (MA)",

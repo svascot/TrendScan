@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { GmmaDualChart, LONG_RIBBON, RibbonLegendRow, SHORT_RIBBON } from "@/components/gmma/GmmaDualChart";
 import { EXAMPLE_GMMA } from "@/lib/gmma-example";
+import { createClient } from "@/lib/supabase/server";
 
 interface RuleCard {
   n: string;
@@ -37,8 +38,12 @@ const RULES: RuleCard[] = [
   },
 ];
 
-export default function MarketingPage() {
+export default async function MarketingPage() {
   const ex = EXAMPLE_GMMA;
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   return (
     <main>
       {/* ───────── Hero ───────── */}
@@ -59,18 +64,29 @@ export default function MarketingPage() {
           momentum confirming and a mechanical 1:2 trade plan attached.
         </p>
         <div className="mt-10 flex flex-wrap gap-4">
-          <Link
-            href="/login"
-            className="rounded-md bg-emerald-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
-          >
-            Get Started Now
-          </Link>
-          <Link
-            href="/login"
-            className="rounded-md border border-slate-700 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-emerald-400 hover:text-emerald-300"
-          >
-            Sign In
-          </Link>
+          {user ? (
+            <Link
+              href="/scanner"
+              className="rounded-md bg-emerald-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
+            >
+              Go to Scanner
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded-md bg-emerald-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
+              >
+                Get Started Now
+              </Link>
+              <Link
+                href="/login"
+                className="rounded-md border border-slate-700 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:border-emerald-400 hover:text-emerald-300"
+              >
+                Sign In
+              </Link>
+            </>
+          )}
         </div>
       </section>
 

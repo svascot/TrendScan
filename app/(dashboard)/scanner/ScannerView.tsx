@@ -301,7 +301,8 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
       <p className="text-xs text-slate-500">
         Trade setups calculated with your personal targets:{" "}
         <span className="text-emerald-400">+{(settings.tpPct * 100).toFixed(1)}% TP</span> /{" "}
-        <span className="text-red-400">-{(settings.slPct * 100).toFixed(1)}% SL</span>. Edit in{" "}
+        <span className="text-red-400">-{(settings.slPct * 100).toFixed(1)}% SL</span>. Prices and
+        P&amp;L are gross of broker commissions — factor your fees in yourself. Edit in{" "}
         <a href="/settings" className="text-emerald-400 hover:underline" onClick={(e) => { e.preventDefault(); router.push("/settings"); }}>Settings</a>.
       </p>
 

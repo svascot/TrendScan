@@ -33,7 +33,6 @@ interface FormState {
   atrMinPct: string;
   totalCapital: string;
   riskPerTradePct: string;
-  brokerFeeUsd: string;
 }
 
 function toForm(s: StrategySettings): FormState {
@@ -49,7 +48,6 @@ function toForm(s: StrategySettings): FormState {
     atrMinPct: (s.atrMinPct * 100).toFixed(2),
     totalCapital: s.totalCapital.toFixed(2),
     riskPerTradePct: s.riskPerTradePct.toFixed(2),
-    brokerFeeUsd: s.brokerFeeUsd.toFixed(2),
   };
 }
 
@@ -151,7 +149,6 @@ export function SettingsView({ initial }: Props) {
       atrMinPct: parseFloat(form.atrMinPct) / 100,
       totalCapital: parseFloat(form.totalCapital),
       riskPerTradePct: parseFloat(form.riskPerTradePct),
-      brokerFeeUsd: parseFloat(form.brokerFeeUsd),
       notificationsEnabled,
     });
 
@@ -178,7 +175,8 @@ export function SettingsView({ initial }: Props) {
         atr_min_pct: parsed.data.atrMinPct,
         total_capital: parsed.data.totalCapital,
         risk_per_trade_pct: parsed.data.riskPerTradePct,
-        broker_fee_usd: parsed.data.brokerFeeUsd,
+        // Broker fees are no longer modelled; the column is kept, written as 0.
+        broker_fee_usd: 0,
         notifications_enabled: parsed.data.notificationsEnabled,
       };
       const { error } = await supabase
@@ -207,101 +205,63 @@ export function SettingsView({ initial }: Props) {
         </p>
       </header>
 
-      <form onSubmit={onSubmit} className="space-y-8 rounded-xl border border-slate-800 bg-slate-900/40 p-4 sm:p-6">
-        <Section
-          title="Trade Targets"
-          helpId="tradeTargets"
-          hint="Symmetric 1:2 risk:reward is the system default. Lower TP = easier to hit, lower per-trade payoff."
+      <form onSubmit={onSubmit} className="space-y-10 rounded-xl border border-slate-800 bg-slate-900/40 p-4 sm:p-6">
+        {/* ───────── General — applies across the whole app / both scanners ───────── */}
+        <Group
+          title="General"
+          description="Applies across the whole app and to both scanners."
         >
-          <Field label="Take Profit %" suffix="%" value={form.tpPct} onChange={(v) => update("tpPct", v)} step="0.1" />
-          <Field label="Stop Loss %" suffix="%" value={form.slPct} onChange={(v) => update("slPct", v)} step="0.1" min="0" />
-        </Section>
+          <Section
+            title="Money Management"
+            helpId="moneyManagement"
+            hint="Both scanners use these to size each position so a stop-out costs exactly the configured % of capital."
+          >
+            <Field
+              label="Total Capital"
+              suffix="$"
+              value={form.totalCapital}
+              onChange={(v) => update("totalCapital", v)}
+              step="100"
+            />
+            <Field
+              label="Risk per Trade"
+              suffix="%"
+              value={form.riskPerTradePct}
+              onChange={(v) => update("riskPerTradePct", v)}
+              step="0.1"
+            />
+          </Section>
 
-        <Section
-          title="RSI Band"
-          helpId="rsiBand"
-          hint="Buy strength, not exhaustion. Default 55–65 keeps you out of overbought territory."
-        >
-          <Field label="RSI Low" value={form.rsiLow} onChange={(v) => update("rsiLow", v)} step="1" />
-          <Field label="RSI High" value={form.rsiHigh} onChange={(v) => update("rsiHigh", v)} step="1" />
-        </Section>
-
-        <Section
-          title="Volatility Floor (ATR)"
-          helpId="volatilityFloor"
-          hint="Minimum daily range (ATR14 / Close) so the asset can realistically reach TP inside 1–5 days. Default 1.5%."
-        >
-          <Field
-            label="ATR Min %"
-            suffix="%"
-            value={form.atrMinPct}
-            onChange={(v) => update("atrMinPct", v)}
-            step="0.1"
-          />
-        </Section>
-
-        <Section
-          title="Money Management"
-          helpId="moneyManagement"
-          hint="Used by the GMMA scanner to size each position so a stop-out costs exactly the configured % of capital. The broker fee (round trip) is added on top of the take-profit so wins still net 2:1 after commissions."
-        >
-          <Field
-            label="Total Capital"
-            suffix="$"
-            value={form.totalCapital}
-            onChange={(v) => update("totalCapital", v)}
-            step="100"
-          />
-          <Field
-            label="Risk per Trade"
-            suffix="%"
-            value={form.riskPerTradePct}
-            onChange={(v) => update("riskPerTradePct", v)}
-            step="0.1"
-          />
-          <Field
-            label="Broker Fee per Trade"
-            suffix="$"
-            value={form.brokerFeeUsd}
-            onChange={(v) => update("brokerFeeUsd", v)}
-            step="0.5"
-            min="0"
-          />
-        </Section>
-
-        <Section
-          title="Moving Averages"
-          helpId="movingAverages"
-          hint="50 & 200 are the canonical short / long structural anchors."
-        >
-          <Field label="MA Short" value={form.maShort} onChange={(v) => update("maShort", v)} step="1" />
-          <Field label="MA Long" value={form.maLong} onChange={(v) => update("maLong", v)} step="1" />
-        </Section>
-
-        <Section title="Scanner Display" hint="How many ranked setups to show by default.">
-          <Field label="Top N" value={form.scannerLimit} onChange={(v) => update("scannerLimit", v)} step="1" />
-        </Section>
-
-        <Section title="Auto-Refresh" hint="How often the scanner re-runs automatically while the dashboard is open. Minimum 1 minute.">
-          <Field
-            label="Interval"
-            suffix="min"
-            value={form.refreshIntervalMinutes}
-            onChange={(v) => update("refreshIntervalMinutes", v)}
-            step="1"
-          />
-        </Section>
-
-        <section>
-          <div className="flex items-center gap-1.5">
-            <h2 className="font-mono text-xs uppercase tracking-widest text-slate-400">
-              Notifications
-            </h2>
-          </div>
-          <p className="mt-1 text-xs text-slate-500">
-            Get a Chrome notification for each new GMMA setup that appears while the dashboard is
-            open (even in a background tab). Chrome must stay open for these to arrive.
+          <p className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2 text-xs leading-relaxed text-amber-300/90">
+            Broker commissions are not modelled. The TP/SL prices and projected P&amp;L shown across
+            the app are gross of fees — factor your broker&rsquo;s costs into your own calculations
+            before placing a trade.
           </p>
+
+          <Section title="Scanner Display" hint="How many ranked setups to show by default.">
+            <Field label="Top N" value={form.scannerLimit} onChange={(v) => update("scannerLimit", v)} step="1" />
+          </Section>
+
+          <Section title="Auto-Refresh" hint="How often the scanner re-runs automatically while the dashboard is open. Minimum 1 minute.">
+            <Field
+              label="Interval"
+              suffix="min"
+              value={form.refreshIntervalMinutes}
+              onChange={(v) => update("refreshIntervalMinutes", v)}
+              step="1"
+            />
+          </Section>
+
+          <section>
+            <div className="flex items-center gap-1.5">
+              <h2 className="font-mono text-xs uppercase tracking-widest text-slate-400">
+                Notifications
+              </h2>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Get a Chrome notification for each new GMMA setup that appears while the dashboard is
+              open (even in a background tab). Chrome must stay open for these to arrive.
+            </p>
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
             <div className="min-w-0">
@@ -345,7 +305,69 @@ export function SettingsView({ initial }: Props) {
               </button>
             </div>
           </div>
-        </section>
+          </section>
+        </Group>
+
+        {/* ───────── GMMA Scanner — no dedicated parameters ───────── */}
+        <Group
+          title="GMMA Scanner"
+          description="The headline scanner."
+        >
+          <p className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-3 text-sm leading-relaxed text-slate-400">
+            The GMMA scanner has no parameters to tune here. It derives every entry, stop and
+            take-profit automatically from the dual EMA ribbons (3–15 / 30–60) and the Awesome
+            Oscillator, and sizes each position with the{" "}
+            <span className="text-slate-300">Money Management</span> settings above. Adjust your
+            capital and per-trade risk in the General section to change its output.
+          </p>
+        </Group>
+
+        {/* ───────── Dashboard Scanner (classic MA + RSI) ───────── */}
+        <Group
+          title="Dashboard Scanner"
+          description="Filters for the classic MA + RSI momentum scanner (the /scanner dashboard)."
+        >
+          <Section
+            title="Trade Targets"
+            helpId="tradeTargets"
+            hint="Symmetric 1:2 risk:reward is the system default. Lower TP = easier to hit, lower per-trade payoff."
+          >
+            <Field label="Take Profit %" suffix="%" value={form.tpPct} onChange={(v) => update("tpPct", v)} step="0.1" />
+            <Field label="Stop Loss %" suffix="%" value={form.slPct} onChange={(v) => update("slPct", v)} step="0.1" min="0" />
+          </Section>
+
+          <Section
+            title="RSI Band"
+            helpId="rsiBand"
+            hint="Buy strength, not exhaustion. Default 55–65 keeps you out of overbought territory."
+          >
+            <Field label="RSI Low" value={form.rsiLow} onChange={(v) => update("rsiLow", v)} step="1" />
+            <Field label="RSI High" value={form.rsiHigh} onChange={(v) => update("rsiHigh", v)} step="1" />
+          </Section>
+
+          <Section
+            title="Volatility Floor (ATR)"
+            helpId="volatilityFloor"
+            hint="Minimum daily range (ATR14 / Close) so the asset can realistically reach TP inside 1–5 days. Default 1.5%."
+          >
+            <Field
+              label="ATR Min %"
+              suffix="%"
+              value={form.atrMinPct}
+              onChange={(v) => update("atrMinPct", v)}
+              step="0.1"
+            />
+          </Section>
+
+          <Section
+            title="Moving Averages"
+            helpId="movingAverages"
+            hint="50 & 200 are the canonical short / long structural anchors."
+          >
+            <Field label="MA Short" value={form.maShort} onChange={(v) => update("maShort", v)} step="1" />
+            <Field label="MA Long" value={form.maLong} onChange={(v) => update("maLong", v)} step="1" />
+          </Section>
+        </Group>
 
         {error && (
           <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
@@ -375,6 +397,20 @@ export function SettingsView({ initial }: Props) {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function Group({
+  title, description, children,
+}: { title: string; description: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-6 border-t border-slate-800 pt-6 first:border-t-0 first:pt-0">
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-400">{title}</h2>
+        <p className="mt-1 text-xs text-slate-500">{description}</p>
+      </div>
+      {children}
     </div>
   );
 }

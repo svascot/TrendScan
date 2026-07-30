@@ -12,7 +12,6 @@ export interface StrategySettings {
   atrMinPct: number; // e.g. 0.015 = 1.5% — min (ATR/close) for the volatility filter
   totalCapital: number; // USD, account size used for GMMA position sizing
   riskPerTradePct: number; // percent, e.g. 1.0 = 1% risked per trade
-  brokerFeeUsd: number; // USD per round trip (entry + exit combined), covered by the GMMA TP
   notificationsEnabled: boolean; // fire a browser notification for each new GMMA setup
 }
 
@@ -28,7 +27,6 @@ export const STRATEGY_DEFAULTS: StrategySettings = {
   atrMinPct: 0.015,
   totalCapital: 10000,
   riskPerTradePct: 1.0,
-  brokerFeeUsd: 2.0,
   notificationsEnabled: false,
 };
 
@@ -44,7 +42,6 @@ export const strategySchema = z.object({
   atrMinPct: z.number().min(0).max(0.2),
   totalCapital: z.number().min(0).max(1_000_000_000),
   riskPerTradePct: z.number().min(0.1).max(10),
-  brokerFeeUsd: z.number().min(0).max(100),
   notificationsEnabled: z.boolean(),
 }).refine((s) => s.rsiHigh > s.rsiLow, {
   message: "rsiHigh must be greater than rsiLow",
@@ -119,10 +116,6 @@ export function settingsFromRow(row: DbSettingsRow | null): StrategySettings {
       row.risk_per_trade_pct == null
         ? STRATEGY_DEFAULTS.riskPerTradePct
         : Number(row.risk_per_trade_pct),
-    brokerFeeUsd:
-      row.broker_fee_usd == null
-        ? STRATEGY_DEFAULTS.brokerFeeUsd
-        : Number(row.broker_fee_usd),
     notificationsEnabled:
       row.notifications_enabled == null
         ? STRATEGY_DEFAULTS.notificationsEnabled
@@ -144,7 +137,9 @@ export function settingsToRow(userId: string, s: StrategySettings): DbSettingsRo
     atr_min_pct: s.atrMinPct,
     total_capital: s.totalCapital,
     risk_per_trade_pct: s.riskPerTradePct,
-    broker_fee_usd: s.brokerFeeUsd,
+    // Broker fees are no longer modelled — the column is kept (written as 0) so
+    // existing rows and any NOT NULL constraint stay satisfied without a migration.
+    broker_fee_usd: 0,
     notifications_enabled: s.notificationsEnabled,
   };
 }

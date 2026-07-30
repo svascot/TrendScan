@@ -129,15 +129,12 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
       for (const r of data.results) {
         if (seen.has(r.ticker)) continue;
         const shares = computeShares(riskUsd, r.close, r.targetSl, totalCapital);
-        const slFee = feeAdjustedSl(r.targetSl, settings.brokerFeeUsd, shares);
-        const tpFee = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
-        const feeOk = feePlanValid(r.close, slFee);
         fireSetupNotification(
           {
             ticker: r.ticker,
             close: r.close,
-            target: feeOk ? tpFee : r.targetTp,
-            stop: feeOk ? slFee : r.targetSl,
+            target: r.targetTp,
+            stop: r.targetSl,
             shares,
           },
           () => setSelected(r),
@@ -146,17 +143,11 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
     }
 
     data.results.forEach((r) => seen.add(r.ticker));
-  }, [data, settings.notificationsEnabled, settings.brokerFeeUsd, riskUsd, totalCapital]);
+  }, [data, settings.notificationsEnabled, riskUsd, totalCapital]);
 
   const detailOpen = selected !== null;
   const selectedShares = selected
     ? computeShares(riskUsd, selected.close, selected.targetSl, totalCapital)
-    : 0;
-  const selectedTp = selected
-    ? feeAdjustedTp(selected.targetTp, settings.brokerFeeUsd, selectedShares)
-    : 0;
-  const selectedSlFee = selected
-    ? feeAdjustedSl(selected.targetSl, settings.brokerFeeUsd, selectedShares)
     : 0;
 
   return (
@@ -173,12 +164,6 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
             SL at real support · strict 1:2 TP, kept only when it&rsquo;s reachable below the recent resistance. Position size is computed for your{" "}
             <span className="text-emerald-300">{settings.riskPerTradePct.toFixed(2)}% risk</span> per trade on a{" "}
             <span className="text-emerald-300">${totalCapital.toLocaleString()}</span> account.
-            {settings.brokerFeeUsd > 0 && (
-              <>
-                {" "}TP targets include your{" "}
-                <span className="text-emerald-300">${settings.brokerFeeUsd.toFixed(2)}</span> broker fee.
-              </>
-            )}
           </p>
           {generated && (
             <p className="mt-1 text-xs text-slate-500">
@@ -277,23 +262,18 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
             >
               {filteredStocks.map((r) => {
                 const shares = computeShares(riskUsd, r.close, r.targetSl, totalCapital);
-                const tpFee = feeAdjustedTp(r.targetTp, settings.brokerFeeUsd, shares);
-                const slFee = feeAdjustedSl(r.targetSl, settings.brokerFeeUsd, shares);
-                const feeOk = feePlanValid(r.close, slFee);
                 return (
                   <DecisionCard
                     key={r.ticker}
                     r={r}
                     shares={shares}
-                    stop={feeOk ? slFee : r.targetSl}
-                    target={feeOk ? tpFee : r.targetTp}
+                    stop={r.targetSl}
+                    target={r.targetTp}
                     selected={selected?.ticker === r.ticker}
                     added={addedTickers.has(r.ticker)}
                     adding={addingTicker === r.ticker}
                     onSelect={() => setSelected(r)}
-                    onAdd={() =>
-                      onAdd(r, feeOk ? tpFee : r.targetTp, feeOk ? slFee : r.targetSl)
-                    }
+                    onAdd={() => onAdd(r, r.targetTp, r.targetSl)}
                   />
                 );
               })}
@@ -308,9 +288,6 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
               key={selected.ticker}
               row={selected}
               shares={selectedShares}
-              targetTp={selectedTp}
-              slFee={selectedSlFee}
-              feeUsd={settings.brokerFeeUsd}
               onClose={() => setSelected(null)}
             />
           </div>
@@ -324,9 +301,6 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
           key={selected.ticker}
           row={selected}
           shares={selectedShares}
-          targetTp={selectedTp}
-          slFee={selectedSlFee}
-          feeUsd={settings.brokerFeeUsd}
           onClose={() => setSelected(null)}
         />
       )}
@@ -336,9 +310,8 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
         <span className="text-emerald-400">${totalCapital.toLocaleString()}</span> capital ×{" "}
         <span className="text-emerald-400">{settings.riskPerTradePct.toFixed(2)}%</span> per trade
         (= ${riskUsd.toFixed(2)} risk / trade), capped at what your capital can buy
-        (fractional shares). TP targets are raised by{" "}
-        <span className="text-emerald-400">${settings.brokerFeeUsd.toFixed(2)}</span> ÷ shares so wins
-        net 2:1 after broker fees. Edit in{" "}
+        (fractional shares). Prices and P&amp;L are gross of broker commissions — factor your fees in
+        yourself. Edit in{" "}
         <a href="/settings" className="text-emerald-400 hover:underline" onClick={(e) => { e.preventDefault(); router.push("/settings"); }}>Settings</a>.
       </p>
     </div>
@@ -347,9 +320,8 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
 
 // ───────────────────────── Decision card ─────────────────────────
 // Leads with the decision — ticker, buy price, the SL/TP/risk bracket, size and
-// a one-tap add — and tucks the full math (EMAs, AO, fee math, chart) behind the
-// detail panel via "Why →". The fee-covered SL/TP are shown when valid; otherwise
-// the raw structural levels (the same logic the +Add button uses).
+// a one-tap add — and tucks the full math (EMAs, AO, chart) behind the detail
+// panel via "Why →". Shows the strict 1:2 structural levels (same as +Add uses).
 function DecisionCard({
   r,
   shares,
@@ -481,27 +453,6 @@ function computeShares(riskUsd: number, entry: number, stop: number, capitalUsd:
   return Math.floor(shares * 100) / 100;
 }
 
-// Raise the TP by the round-trip broker fee spread across the position, so a win
-// covers the commission first and still nets 2x the risked amount.
-function feeAdjustedTp(targetTp: number, feeUsd: number, shares: number): number {
-  if (shares <= 0 || feeUsd <= 0) return targetTp;
-  return Math.round((targetTp + feeUsd / shares) * 100) / 100;
-}
-
-// Raise the SL by the same per-share fee. A slightly tighter stop means the
-// price loss plus the round-trip fee equals exactly the risked amount — so paired
-// with feeAdjustedTp the trade nets a TRUE 1:2 after commissions.
-function feeAdjustedSl(targetSl: number, feeUsd: number, shares: number): number {
-  if (shares <= 0 || feeUsd <= 0) return targetSl;
-  return Math.round((targetSl + feeUsd / shares) * 100) / 100;
-}
-
-// The fee-covered plan only exists when the per-share fee is smaller than the
-// risk — otherwise the fee-adjusted stop would sit at or above the entry.
-function feePlanValid(entry: number, slFee: number): boolean {
-  return slFee < entry;
-}
-
 function SharesBadge({ shares }: { shares: number }) {
   if (shares <= 0) {
     return (
@@ -522,14 +473,14 @@ function SharesBadge({ shares }: { shares: number }) {
   );
 }
 
-// Collapsible worked example explaining how the structural SL/TP (and their
-// fee-covered variants) are derived. Numbers are illustrative, not live.
+// Collapsible worked example explaining how the structural SL/TP are derived.
+// Numbers are illustrative, not live.
 function TpSlExplainer() {
   return (
     <details className="group rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-3 text-sm">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-slate-200">
         <span className="font-medium">
-          How are TP / SL — and the fee-covered versions — calculated?
+          How are the TP / SL levels calculated?
         </span>
         <span aria-hidden className="font-mono text-xs text-slate-500 transition-transform group-open:rotate-180">
           ▾
@@ -542,8 +493,7 @@ function TpSlExplainer() {
           The <strong>SL</strong> sits just below the recent <em>support</em> (pullback low) — a real
           level. The <strong>TP</strong> is a strict <strong>1:2</strong> (entry + 2×risk), but the
           setup is only kept if that TP lands <em>below</em> the recent <em>resistance</em> — a price
-          the stock already traded — so it&rsquo;s reachable, not beyond a wall. The fee-covered prices
-          then shift both levels by the per-share fee so the 1:2 also holds on the actual dollars.
+          the stock already traded — so it&rsquo;s reachable, not beyond a wall.
         </p>
 
         <div className="overflow-x-auto">
@@ -554,7 +504,6 @@ function TpSlExplainer() {
               <tr><td>Support (10-bar low)</td><td className="text-slate-200">$97.00</td><td className="text-slate-500">anchors the SL</td></tr>
               <tr><td>Resistance (20-bar high)</td><td className="text-slate-200">$112.00</td><td className="text-slate-500">reachability gate</td></tr>
               <tr><td>Capital × risk%</td><td className="text-slate-200">$12,600 × 1% = $126</td><td className="text-slate-500">risk budget</td></tr>
-              <tr><td>Broker fee</td><td className="text-slate-200">$2.00</td><td className="text-slate-500">round trip</td></tr>
             </tbody>
           </table>
         </div>
@@ -564,35 +513,22 @@ function TpSlExplainer() {
           <li><span className="text-slate-300">TP</span> = entry + 2×risk = 100 + 8.40 = <span className="text-emerald-300">$108.40</span> &nbsp;(strict 1:2)</li>
           <li><span className="text-slate-300">Reachable?</span> TP $108.40 ≤ resistance − 0.25×ATR = 112 − 1.0 = $111 &nbsp;<span className="text-emerald-400">✓ kept</span></li>
           <li><span className="text-slate-300">Shares</span> = min(126 ÷ 4.20, 12600 ÷ 100) = <span className="text-slate-200">30</span></li>
-          <li><span className="text-slate-300">Fee / share</span> = $2 ÷ 30 = <span className="text-slate-200">$0.07</span></li>
-          <li><span className="text-slate-300">TP(fee)</span> = 108.40 + 0.07 = <span className="text-emerald-300">$108.47</span>; <span className="text-slate-300">SL(fee)</span> = 95.80 + 0.07 = <span className="text-red-300">$95.87</span></li>
         </ol>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">No-fee levels ($108.40 / $95.80)</p>
-            <dl className="mt-2 space-y-1 font-mono text-xs tabular-nums">
-              <div className="flex justify-between"><dt>If TP hit</dt><dd className="text-emerald-300">+$250</dd></div>
-              <div className="flex justify-between"><dt>If SL hit</dt><dd className="text-red-300">−$128</dd></div>
-            </dl>
-            <p className="mt-2 text-[11px] text-slate-500">≈ 1.95 : 1 — the flat fee tilts it.</p>
-          </div>
-          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] p-3">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-emerald-500/80">Fee-covered ($108.47 / $95.87)</p>
-            <dl className="mt-2 space-y-1 font-mono text-xs tabular-nums">
-              <div className="flex justify-between"><dt>If TP hit</dt><dd className="text-emerald-300">+$252</dd></div>
-              <div className="flex justify-between"><dt>If SL hit</dt><dd className="text-red-300">−$126</dd></div>
-            </dl>
-            <p className="mt-2 text-[11px] text-emerald-300/80">= exactly 2 : 1, net of fees.</p>
-          </div>
+        <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 sm:max-w-xs">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">Levels $108.40 / $95.80 · 30 shares</p>
+          <dl className="mt-2 space-y-1 font-mono text-xs tabular-nums">
+            <div className="flex justify-between"><dt>If TP hit</dt><dd className="text-emerald-300">+$252</dd></div>
+            <div className="flex justify-between"><dt>If SL hit</dt><dd className="text-red-300">−$126</dd></div>
+          </dl>
+          <p className="mt-2 text-[11px] text-emerald-300/80">= exactly 2 : 1 on the price.</p>
         </div>
 
         <p className="text-xs leading-relaxed text-slate-500">
-          The fee-covered plan makes your net loss equal your budgeted risk ($126 = 1%) and your net
-          win exactly 2× ($252), so the 1:2 survives commissions. If the strict 1:2 TP would land{" "}
-          <em>above</em> the recent resistance, the setup is skipped — that target isn&rsquo;t realistically
-          reachable. And if a position is so small that the per-share fee exceeds the risk, the
-          fee-covered plan can&rsquo;t exist — size up so a flat fee stays negligible.
+          If the strict 1:2 TP would land <em>above</em> the recent resistance, the setup is skipped —
+          that target isn&rsquo;t realistically reachable. These figures are{" "}
+          <span className="text-slate-400">gross of broker commissions</span>; factor your own fees in
+          when you size the trade.
         </p>
       </div>
     </details>
