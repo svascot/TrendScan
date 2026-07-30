@@ -9,7 +9,7 @@ A breakdown of what TrendScan is, how the codebase is organised, and how request
 TrendScan is a **single-tenant-per-user momentum scanner with a manual trade tracker**, hosted on free tiers (Vercel + Supabase + Alpaca). It does four things for each authenticated user:
 
 1. **Scans** a curated universe of ~520 US large-caps + premium ETFs every visit, applies four hard technical filters, then ranks survivors with a 3-factor composite score (velocity 50 / RSI sweet-spot 30 / volume injection 20). Results are tagged with their index memberships (`sp500`, `nasdaq100`), and the UI lets the user toggle either index off.
-2. **GMMA scans** the same universe with an independent strategy (`/gmma-scanner` → `/api/scan-gmma` → `lib/gmma-scanner.ts`): an ordered Guppy EMA fan (30/35/40/45/50/60), price pulled back inside the EMA30–EMA60 channel, and a rising Awesome Oscillator. Matches carry a structural stop loss (the tighter of EMA60 or the 5-bar swing low), a 1:2 take profit derived from that stop, and a per-user position size in shares computed client-side from the money-management settings (`total_capital` × `risk_per_trade_pct`). The displayed/saved TP is additionally raised by `broker_fee_usd / shares` so a win still nets 2:1 after the broker's round-trip commission.
+2. **GMMA scans** the same universe with an independent strategy (`/gmma-scanner` → `/api/scan-gmma` → `lib/gmma-scanner.ts`): an ordered Guppy EMA fan (30/35/40/45/50/60), price pulled back inside the EMA30–EMA60 channel, and a rising Awesome Oscillator. Matches carry a structural stop loss (the tighter of EMA60 or the 5-bar swing low), a 1:2 take profit derived from that stop, and a per-user position size in shares computed client-side from the money-management settings (`total_capital` × `risk_per_trade_pct`). Displayed prices and P&L are gross of broker commissions — the user factors their own fees in.
 3. **Watchlist** — the user adds arbitrary US equities by ticker or company name (autocomplete is backed by Alpaca's `/v2/assets` feed via `/api/symbols/search`). The same scoring engine runs against just that personal list. Unlike the scanner, watchlist mode never gates on rule failures — when any of the four trend rules fails, the composite score is **halved** so the row sinks in the ranking but stays visible, and a "No Setup · Trend Filter Failed" badge is shown next to the ticker.
 4. **Tracks** a personal portfolio of trades the user "adds" from either scanner — entry, TP, SL targets are snapshotted at click time so later strategy changes never retroactively shift open trades.
 
@@ -40,8 +40,8 @@ No state managers, no ORMs, no UI libraries beyond Recharts. Everything else is 
 app/
 ├── layout.tsx                    # Root HTML shell (fonts, body classes)
 ├── (marketing)/                  # Public-facing route group
-│   ├── layout.tsx                # No nav, no auth
-│   └── page.tsx                  # Landing page → /login
+│   ├── layout.tsx                # No nav; server-checks auth to swap the header CTA
+│   └── page.tsx                  # Landing → /login (or → /scanner when already signed in)
 ├── (dashboard)/                  # Authenticated route group
 │   ├── layout.tsx                # Server-checks auth, wraps in DashboardShell
 │   ├── _components/
@@ -50,10 +50,11 @@ app/
 │   ├── scanner/
 │   │   ├── page.tsx              # Server wrapper → fetches user + settings
 │   │   ├── ScannerView.tsx       # Client UI: filters, toggles, table, polling
-│   │   └── SetupAuditModal.tsx   # Per-row breakdown modal (embeds chart)
+│   │   ├── SetupAuditContent.tsx # Shared per-row breakdown body (chart + rules + score)
+│   │   └── SetupAuditModal.tsx   # Mobile sheet chrome; delegates body to SetupAuditContent
 │   ├── gmma-scanner/
 │   │   ├── page.tsx              # Server wrapper → fetches user + settings
-│   │   └── GmmaScannerView.tsx   # Client UI: GMMA table, position sizing, fee-adjusted TP, polling
+│   │   └── GmmaScannerView.tsx   # Client UI: GMMA cards, position sizing, detail panel, polling
 │   ├── watchlist/
 │   │   ├── page.tsx              # Server wrapper → fetches user + settings
 │   │   └── WatchlistView.tsx     # Client UI: autocomplete add, table, remove, polling
@@ -62,7 +63,7 @@ app/
 │   │   └── PortfolioView.tsx     # Open + closed trades, expandable rows w/ chart, win-rate
 │   └── settings/
 │       ├── page.tsx              # Server wrapper → loads settings
-│       └── SettingsView.tsx      # Form + Zod validation
+│       └── SettingsView.tsx      # Form + Zod validation, grouped General / GMMA / Dashboard
 ├── login/page.tsx                # Sign-in / sign-up
 ├── auth/callback/route.ts        # OAuth/email-link → session exchange
 └── api/
@@ -74,7 +75,8 @@ lib/
 ├── indicators.ts                 # Pure functions: SMA, Wilder RSI(14), ATR, ROC, EMA, Awesome Oscillator
 ├── scanner.ts                    # ScanResult, evaluateTicker, evaluateTickerForWatchlist, rankResults
 ├── gmma-scanner.ts               # GmmaScanResult, evaluateGmmaTicker, rankGmmaResults, GMMA cache
-├── strategy.ts                   # Defaults, Zod schema, row mappers, TP/SL math
+├── strategy.ts                   # Defaults, Zod schema, row mappers, TP/SL math, position sizing (computeShares)
+├── constants/disclaimers.ts      # COMMISSION_DISCLAIMER — shared "fees not modelled" notice
 ├── alpaca.ts                     # Batched daily-bars fetcher + active-equities fetcher
 ├── universe.ts                   # Deduped universe, getIndicesFor(ticker)
 ├── universe.json                 # S&P 500 + Nasdaq-100 + ETF tickers
@@ -286,17 +288,15 @@ User → /gmma-scanner
           · targetTp = close + 2 × (close - targetSl)  → 1:2 R:R
       - rankGmmaResults → ascending riskPerShare / close
         (tightest relative stop first), then slice top-N
-   c. Position sizing is client-side:
-      shares = floor(totalCapital × riskPerTradePct% / riskPerShare)
-      — so the cached payload is shareable across users while each
-      sees their own size. shares ≤ 0 renders "n/a" and disables Add.
-   d. TP is fee-adjusted client-side (feeAdjustedTp):
-      targetTp += brokerFeeUsd / shares
-      — covers the broker's round-trip commission so a win still
-      nets 2× the risked amount. Fee = 0 or shares ≤ 0 → raw TP.
-   e. + Add inserts into user_trades with the STRUCTURAL targets
-      (fee-adjusted targetTp / r.targetSl), not the percentage-based
-      computeTpSl used by the classic scanner.
+   c. Position sizing is client-side via computeShares (lib/strategy.ts):
+      shares = floor(min(riskUsd / riskPerShare, capital / entry))
+      — supports fractional shares, capped by buying power. The cached
+      payload is shareable across users while each sees their own size.
+      shares ≤ 0 renders "n/a" and disables Add. Prices/P&L are gross of
+      broker commissions (broker fees are not modelled by the app).
+   d. + Add inserts into user_trades with the STRUCTURAL targets
+      (r.targetTp / r.targetSl), not the percentage-based computeTpSl
+      used by the classic scanner.
 ```
 
 ### Portfolio flow — server-side bars for chart expansions
@@ -307,7 +307,10 @@ User → /portfolio
   ▼
 1. Same middleware + dashboard layout gates as Scanner.
 2. /portfolio/page.tsx (RSC):
-   - listTrades(supabase, user.id) → open + archived
+   - listTrades(supabase, user.id) → open (status OPEN) + archived (rest)
+   - open keeps listTrades' created_at-desc order ("Opened" column);
+     archived is re-sorted by closed_at desc (fallback created_at) so
+     the most recently closed trade lands at the TOP of History
    - openTickers = unique tickers from OPEN trades
    - if openTickers.length > 0: fetchDailyBars(openTickers)
        → server-side Alpaca call, never client→Alpaca
@@ -378,6 +381,8 @@ Three Supabase clients live in `lib/supabase/`:
 - **`client.ts`** — for `"use client"` components. Browser-side, reads `document.cookie`.
 - **`middleware.ts`** — for edge middleware. Reads + writes cookies on the `NextRequest`/`NextResponse` pair so the session can be refreshed transparently.
 
+`server.ts` also exports **`getUser()`** — a `React.cache()`-wrapped `auth.getUser()` so multiple server components in the same render (e.g. the marketing `layout.tsx` + `page.tsx`, which both branch their CTA on auth) share one Supabase round-trip instead of firing their own.
+
 All three use the same `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY`. The service role key is **not** used by the app — security is delegated to RLS.
 
 ---
@@ -434,7 +439,7 @@ One row per user. Schema mirrors `StrategySettings` in `lib/strategy.ts`:
 | `atr_min_pct` | numeric(5,4) | `0.0150` (CHECK 0–0.2) — ATR volatility floor (migration `0007`) |
 | `total_capital` | numeric(12,2) | `10000.00` (CHECK ≥ 0) — account size for GMMA position sizing (migration `0008`) |
 | `risk_per_trade_pct` | numeric(5,2) | `1.00` (CHECK 0–10, exclusive low) — % of capital risked per GMMA trade (migration `0008`) |
-| `broker_fee_usd` | numeric(8,2) | `2.00` (CHECK 0–100) — flat round-trip commission folded into the GMMA TP (migration `0009`) |
+| `broker_fee_usd` | numeric(8,2) | `2.00` (migration `0009`) — **legacy/unused**: broker-fee modelling was removed; the app no longer reads this column and writes `0` on save. Kept to avoid a migration. |
 | `updated_at` | timestamptz | trigger keeps fresh |
 
 ### RLS
@@ -555,9 +560,9 @@ The marketing surface has its own minimal layout (`app/(marketing)/layout.tsx`) 
 | Change how watchlist failures are penalised | The `* 0.5` in `evaluateTickerForWatchlist` (`lib/scanner.ts`) |
 | Tune the GMMA fan periods or entry rules | `EMA_PERIODS` + the rule checks in `evaluateGmmaTicker` (`lib/gmma-scanner.ts`) |
 | Change the GMMA stop anchors or the 1:2 R:R multiple | The `max(e60, low5d)` / `2 * riskPerShare` lines in `evaluateGmmaTicker` (`lib/gmma-scanner.ts`) |
-| Change how GMMA position size is computed | `computeShares` in `GmmaScannerView.tsx` |
-| Change how the broker fee adjusts the GMMA TP | `feeAdjustedTp` in `GmmaScannerView.tsx` |
-| Change the default strategy values (incl. capital / risk / broker fee) | `STRATEGY_DEFAULTS` in `lib/strategy.ts` |
+| Change how GMMA position size is computed | `computeShares` in `lib/strategy.ts` (pure, unit-tested) |
+| Change the default strategy values (incl. capital / risk) | `STRATEGY_DEFAULTS` in `lib/strategy.ts` |
+| Change the "commissions not modelled" notice | `COMMISSION_DISCLAIMER` in `lib/constants/disclaimers.ts` (single source, reused everywhere) |
 | Add a new ticker to the scanned universe | `lib/universe.json` |
 | Change the scanner cache TTL upper bound | `CACHE_TTL_MS` in `app/api/scan/route.ts` and `app/api/scan-gmma/route.ts` |
 | Change the default client-side max-age | `DEFAULT_MAX_AGE_MS` in `app/api/scan/route.ts` and `app/api/scan-gmma/route.ts` |

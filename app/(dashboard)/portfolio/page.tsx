@@ -15,8 +15,18 @@ export default async function PortfolioPage() {
   if (!user) redirect("/login");
 
   const trades = await listTrades(supabase, user.id);
+  // Open trades keep listTrades' created_at-desc order ("Opened" column). History
+  // is ordered by when each trade was actually archived (closed_at), so the most
+  // recently closed trade lands at the top — a trade opened days ago but closed
+  // just now would otherwise sort by its old creation date and look "missing".
   const open = trades.filter((t) => t.status === "OPEN");
-  const archived = trades.filter((t) => t.status !== "OPEN");
+  const archived = trades
+    .filter((t) => t.status !== "OPEN")
+    .sort(
+      (a, b) =>
+        new Date(b.closed_at ?? b.created_at).getTime() -
+        new Date(a.closed_at ?? a.created_at).getTime(),
+    );
 
   const openTickers = Array.from(new Set(open.map((t) => t.ticker)));
   const charts: Record<string, ChartSnapshot> = {};

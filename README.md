@@ -6,7 +6,7 @@ A lightweight, hosted momentum scanner + manual portfolio tracker built for a sm
 
 ## How TP / SL is calculated (worked example)
 
-**SL on real support, TP at a strict 1:2 that's reachable.** The **SL** sits just below the recent *support* (pullback low) — a real level. The **TP** is a strict **1:2** (entry + 2×risk), but the setup is only kept if that TP lands *below* the recent *resistance* — a price the stock already traded — so it's reachable, not beyond a wall. The **fee-covered** prices then shift both levels by the per-share fee so the 1:2 also holds on the actual dollars in your account.
+**SL on real support, TP at a strict 1:2 that's reachable.** The **SL** sits just below the recent *support* (pullback low) — a real level. The **TP** is a strict **1:2** (entry + 2×risk), but the setup is only kept if that TP lands *below* the recent *resistance* — a price the stock already traded — so it's reachable, not beyond a wall.
 
 | Input | Value |
 | --- | --- |
@@ -15,29 +15,25 @@ A lightweight, hosted momentum scanner + manual portfolio tracker built for a sm
 | Support (10-bar low) | **$97.00** |
 | Resistance (20-bar high) | **$112.00** |
 | Capital × risk % | **$12,600 × 1% = $126** |
-| Broker fee (round trip) | **$2.00** |
 
 1. **SL** = support − 0.3 × ATR = 97 − 1.2 = **$95.80**  → risk = **$4.20 / share**
 2. **TP** = entry + 2 × risk = 100 + 8.40 = **$108.40**  (strict 1:2)
 3. **Reachable?** TP $108.40 ≤ resistance − 0.25×ATR = 112 − 1.0 = $111 → **✓ kept** (if the 1:2 TP were *above* resistance, the setup is skipped)
 4. **Shares** = min(126 ÷ 4.20, 12,600 ÷ 100) = **30**
-5. **Fee / share** = $2 ÷ 30 = **$0.07**
-6. **TP(fee)** = 108.40 + 0.07 = **$108.47**;  **SL(fee)** = 95.80 + 0.07 = **$95.87** (slightly tighter stop)
 
-Net P&L on the 30-share position, after the $2 round-trip fee:
+Projected P&L on the 30-share position, on the price levels alone:
 
-| Plan | If TP hit | If SL hit | Net ratio |
-| --- | --- | --- | --- |
-| No-fee levels ($108.40 / $95.80) | +$250 | −$128 | ≈ 1.95 : 1 (the flat fee tilts it) |
-| **Fee-covered ($108.47 / $95.87)** | **+$252** | **−$126** | **exactly 2 : 1** |
+| If TP hit | If SL hit | Ratio |
+| --- | --- | --- |
+| +$252 | −$126 | **exactly 2 : 1** |
 
-The fee-covered plan makes your net loss equal your budgeted risk ($126 = 1%) and your net win exactly 2× ($252), so the 1:2 survives commissions. If the strict 1:2 TP would land *above* the recent resistance, the setup is skipped — that target isn't realistically reachable. If a position is tiny enough that the per-share fee exceeds the risk, the fee-covered plan can't exist — size up so a flat fee stays negligible.
+> **Broker commissions are not modelled.** The displayed TP/SL prices and projected P&L are *gross* of fees — factor your broker's costs into your own sizing before you place the trade. (Earlier versions folded a configurable "broker fee" into the GMMA TP; that was removed in favour of this simpler, transparent contract.)
 
 ## What it does
 
 - Scans a liquid universe of ~2,500 US common shares + ETFs (S&P 500, Nasdaq 100, sector SPDRs, plus ~2,000 additional liquid names sourced by `build-universe`) against four hard rules every visit.
 - Ranks the survivors with a transparent 3-factor composite score.
-- Runs a second, independent **GMMA scanner** over the same universe — a Guppy Multiple Moving Average dual ribbon (short/trader EMAs 3/5/8/10/12/15 above long/investor EMAs 30/35/40/45/50/60) with a pullback-into-the-short-ribbon entry and an Awesome Oscillator confirmation (bullish saucer or zero-line cross). Each match ships a stop just below the recent support (pullback low, buffered by a fraction of ATR) and a **strict 1:2** take-profit (entry + 2×risk) — kept only when that target lands below the recent resistance, so it's realistically reachable. It also ships a position size in shares from the user's money-management settings (total capital × risk per trade). Both the stop and target come in **fee-covered** variants that bake in the round-trip broker fee so the net 1:2 survives commissions (see the worked example above).
+- Runs a second, independent **GMMA scanner** over the same universe — a Guppy Multiple Moving Average dual ribbon (short/trader EMAs 3/5/8/10/12/15 above long/investor EMAs 30/35/40/45/50/60) with a pullback-into-the-short-ribbon entry and an Awesome Oscillator confirmation (bullish saucer or zero-line cross). Each match ships a stop just below the recent support (pullback low, buffered by a fraction of ATR) and a **strict 1:2** take-profit (entry + 2×risk) — kept only when that target lands below the recent resistance, so it's realistically reachable. It also ships a position size in shares from the user's money-management settings (total capital × risk per trade). Displayed prices and P&L are gross of broker commissions (see the worked example above).
 - Lets each user maintain a personal **watchlist** of arbitrary US equities — autocompleted from Alpaca's tradable-asset feed — and runs the same scoring engine against it. Failing setups stay visible with their score halved so you can watch them recover.
 - Lets each user manually track open trades against personalised TP/SL targets and archive closed ones with a running win rate.
 - Stays on permanent free tiers across Vercel + Supabase + Alpaca.
@@ -250,17 +246,11 @@ Position size is computed client-side from two per-user **Money Management** set
 
 $$\text{shares} = \left\lfloor \frac{\text{totalCapital} \cdot \text{riskPerTradePct} / 100}{\text{risk/share}} \right\rfloor$$
 
-Defaults: `totalCapital = $10,000`, `riskPerTradePct = 1.0%` → a stop-out costs exactly $100.
+Defaults: `totalCapital = $10,000`, `riskPerTradePct = 1.0%` → a stop-out costs exactly $100. `computeShares` (a pure helper in `lib/strategy.ts`, unit-tested) supports fractional shares and is also capped by what the capital can actually buy (`capital / entry`). When shares can't be computed (`n/a` rows), **+ Add** stays disabled.
 
-### Broker-fee-adjusted take profit
+> **No broker-fee modelling.** A configurable `brokerFeeUsd` setting used to raise the TP to cover round-trip commissions; it was removed. The displayed TP/SL and P&L are now gross of fees — see the worked example at the top. The `broker_fee_usd` DB column (migration `0009`) still exists but is unused (written as `0`); no migration was needed to drop it.
 
-A third money-management setting, `brokerFeeUsd` (migration `0009`, default `$2.00`), holds the flat commission your broker charges per **round trip** (entry + exit combined). The displayed TP is raised so a win pays the commission first and *then* nets 2× the risked amount:
-
-$$\text{target}_\text{TP}^{adj} = \text{target}_\text{TP} + \frac{\text{brokerFeeUsd}}{\text{shares}}$$
-
-Example: 100 shares, $1 risk/share, $2 fee → TP sits $0.02 above the raw 1:2 level; hitting it grosses $202, nets $200 after the fee = exactly 2× the $100 risk. The adjustment is applied client-side in `GmmaScannerView.tsx` (`feeAdjustedTp`) — the API payload and cache keep the raw structural TP. With a fee of `0` (commission-free broker) the TP falls back to the pure 1:2 bracket. When shares can't be computed (`n/a` rows), the raw TP is shown and **+ Add** stays disabled.
-
-Clicking **+ Add** snapshots the entry, structural SL, and the **fee-adjusted** TP into `user_trades`, same immutability rule as the classic scanner.
+Clicking **+ Add** snapshots the entry, structural SL, and the strict 1:2 TP into `user_trades`, same immutability rule as the classic scanner.
 
 ### Caching
 
@@ -397,7 +387,7 @@ cp .env.local.example .env.local
 #   supabase/migrations/0006_user_watchlist.sql
 #   supabase/migrations/0007_user_settings_atr_min_pct.sql
 #   supabase/migrations/0008_user_settings_money_mgmt.sql
-#   supabase/migrations/0009_user_settings_broker_fee.sql
+#   supabase/migrations/0009_user_settings_broker_fee.sql   # legacy: column now unused (written as 0)
 # Or paste all the individual files in order (0001 → 0009).
 
 # 4. Configure auth — see "Supabase auth configuration" below.
@@ -405,6 +395,10 @@ cp .env.local.example .env.local
 # 5. Run
 npm run dev
 # → http://localhost:3000
+
+# Unit tests (pure strategy math — computeTpSl, computePositionShares, computeShares):
+npm test        # Node's built-in test runner via tsx, no extra deps
+npm run typecheck
 ```
 
 ## Supabase auth configuration
@@ -619,7 +613,7 @@ Response (truncated):
 }
 ```
 
-Position sizing is **not** in the response — the client computes shares from the user's money-management settings, so two users see different sizes for the same payload (and the cache stays user-agnostic, keyed only by `gmma|<exclude>`). The same goes for the broker-fee TP adjustment: `targetTp` in the payload is always the raw structural 1:2 level; the client adds `brokerFeeUsd / shares` on top before displaying or saving it.
+Position sizing is **not** in the response — the client computes shares from the user's money-management settings, so two users see different sizes for the same payload (and the cache stays user-agnostic, keyed only by `gmma|<exclude>`). `targetTp` in the payload is the structural 1:2 level and is displayed/saved as-is (broker commissions are not modelled).
 
 ### `GET /api/symbols/search?q=...`
 
