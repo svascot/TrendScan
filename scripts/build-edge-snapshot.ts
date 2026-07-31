@@ -41,8 +41,8 @@ async function main(): Promise<void> {
   loadEnv(resolve(process.cwd(), ".env.local"));
   console.log(`\nBuilding edge snapshot · strict gate + fixed 1:2 · ${UNIVERSE.length} symbols…`);
 
-  // Bull window: last 730 days (the live default). Equity curve + metrics.
-  const bullBars = await fetchDailyBars(UNIVERSE, 730);
+  // Bull window: last 547 days (~18 months). Equity curve + metrics.
+  const bullBars = await fetchDailyBars(UNIVERSE, 547);
   const bull = runBacktest(bullBars, BASE);
   let bullStart = "9999";
   let bullEnd = "0000";
