@@ -30,7 +30,7 @@ type NavItem = {
 
 const NAV: readonly NavItem[] = [
   { href: "/gmma-scanner", label: "GMMA Scanner", short: "GMMA", icon: GmmaIcon },
-  { href: "/scanner", label: "Scanner", short: "Scanner", icon: ScannerIcon },
+  { href: "/scanner", label: "Trend Scanner", short: "Trend", icon: ScannerIcon },
   { href: "/watchlist", label: "Watchlist", short: "Watch", icon: WatchlistIcon },
   { href: "/portfolio", label: "Portfolio", short: "Portfolio", icon: PortfolioIcon },
   { href: "/edge", label: "Edge", short: "Edge", icon: EdgeIcon },

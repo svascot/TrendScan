@@ -86,7 +86,7 @@ export function PortfolioView({ open, archived, charts }: Props) {
         <div className="space-y-3 md:hidden">
           {open.length === 0 && (
             <div className="rounded-xl border border-slate-800 bg-slate-900/40 px-4 py-10 text-center text-sm text-slate-400">
-              No open trades. Add one from the Scanner.
+              No open trades. Add one from a scanner.
             </div>
           )}
           {open.map((t) => {
@@ -215,7 +215,7 @@ export function PortfolioView({ open, archived, charts }: Props) {
               {open.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-slate-400">
-                    No open trades. Add one from the Scanner.
+                    No open trades. Add one from a scanner.
                   </td>
                 </tr>
               )}

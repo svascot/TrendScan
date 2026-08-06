@@ -321,10 +321,10 @@ export function SettingsView({ initial }: Props) {
           </p>
         </Group>
 
-        {/* ───────── Dashboard Scanner (classic MA + RSI) ───────── */}
+        {/* ───────── Trend Scanner (classic MA + RSI) ───────── */}
         <Group
-          title="Dashboard Scanner"
-          description="Filters for the classic MA + RSI momentum scanner (the /scanner dashboard)."
+          title="Trend Scanner"
+          description="Filters for the classic MA + RSI momentum scanner (the Trend Scanner dashboard)."
         >
           <Section
             title="Trade Targets"

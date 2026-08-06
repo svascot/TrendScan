@@ -51,6 +51,48 @@ export function SkeletonCards({ detailOpen }: { detailOpen: boolean }) {
   );
 }
 
+// Re-runs the scan on demand (markets shift intraday, so waiting for the auto
+// refresh isn't always enough). Used both in the empty state and in the scanner
+// header, where it stays available while setups are on screen.
+export function RefreshButton({
+  onRefresh,
+  refreshing = false,
+  compact = false,
+}: {
+  onRefresh: () => void;
+  refreshing?: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onRefresh}
+      disabled={refreshing}
+      title="Re-run the scan now"
+      className={`inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/15 font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60 ${
+        compact ? "px-3 py-1.5 text-sm" : "px-4 py-2 text-sm"
+      }`}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+        aria-hidden
+      >
+        <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
+        <path d="M21 3v5h-5" />
+        <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
+        <path d="M3 21v-5h5" />
+      </svg>
+      {refreshing ? "Scanning…" : compact ? "Refresh" : "Refresh scan"}
+    </button>
+  );
+}
+
 // A designed, reassuring empty state — a strict gate means "0 setups" is a
 // frequent, healthy outcome, not an error. Copy is passed by each scanner.
 // An optional refresh re-runs the scan (markets can shift intraday).
@@ -94,31 +136,7 @@ export function EmptyState({
         <h3 className="mt-4 text-base font-semibold text-slate-100">{title}</h3>
         <p className="mt-2 text-sm leading-relaxed text-slate-400">{children}</p>
         <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          {onRefresh && (
-            <button
-              type="button"
-              onClick={onRefresh}
-              disabled={refreshing}
-              className="inline-flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-4 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
-                aria-hidden
-              >
-                <path d="M3 12a9 9 0 0 1 15.5-6.3L21 8" />
-                <path d="M21 3v5h-5" />
-                <path d="M21 12a9 9 0 0 1-15.5 6.3L3 16" />
-                <path d="M3 21v-5h5" />
-              </svg>
-              {refreshing ? "Scanning…" : "Refresh scan"}
-            </button>
-          )}
+          {onRefresh && <RefreshButton onRefresh={onRefresh} refreshing={refreshing} />}
           <button
             type="button"
             onClick={onAction}

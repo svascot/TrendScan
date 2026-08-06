@@ -157,7 +157,7 @@ export function ScannerView({ settings }: { settings: StrategySettings }) {
       {/* ───────── Title block (scrolls away) ───────── */}
       <header className="space-y-2">
         <p className="font-mono text-xs uppercase tracking-[0.3em] text-emerald-400">
-          Daily Scanner Report
+          Daily Trend Scanner Report
         </p>
         <h1 className="text-xl font-semibold tracking-tight text-slate-50 sm:text-2xl">
           Market Universe: ~2,500 Liquid US Stocks &amp; ETFs

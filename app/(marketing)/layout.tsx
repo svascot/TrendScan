@@ -26,7 +26,7 @@ export default async function MarketingLayout({ children }: { children: React.Re
             href={user ? "/scanner" : "/login"}
             className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-1.5 text-sm font-medium text-emerald-300 transition hover:border-emerald-400 hover:bg-emerald-500/20"
           >
-            {user ? "Open Scanner" : "Log In"}
+            {user ? "Open Trend Scanner" : "Log In"}
           </Link>
         </div>
       </header>

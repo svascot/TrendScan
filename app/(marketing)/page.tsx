@@ -66,7 +66,7 @@ export default async function MarketingPage() {
               href="/scanner"
               className="rounded-md bg-emerald-500 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
             >
-              Go to Scanner
+              Go to Trend Scanner
             </Link>
           ) : (
             <>

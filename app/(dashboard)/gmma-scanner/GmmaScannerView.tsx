@@ -8,7 +8,7 @@ import { fireSetupNotification } from "@/lib/notifications";
 import { computeShares, type StrategySettings } from "@/lib/strategy";
 import { COMMISSION_DISCLAIMER } from "@/lib/constants/disclaimers";
 import type { GmmaScanResponse, GmmaScanResult } from "@/lib/gmma-scanner";
-import { BracketCell, EmptyState, SkeletonCards } from "../_components/setup-card";
+import { BracketCell, EmptyState, RefreshButton, SkeletonCards } from "../_components/setup-card";
 import { useIsMobile } from "../_components/use-is-mobile";
 import { GMMADetailPanel, GMMADetailDrawer } from "./GMMADetailPanel";
 
@@ -207,6 +207,9 @@ export function GmmaScannerView({ settings }: { settings: StrategySettings }) {
               <option key={n} value={n}>Top {n}</option>
             ))}
           </select>
+          {/* Always available — the empty state has its own copy, but users also
+              want to re-scan while setups are already on screen. */}
+          <RefreshButton onRefresh={() => fetchScan(limit, 1)} refreshing={loading} compact />
         </div>
       </header>
 
