@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { GmmaDualChart, LONG_RIBBON, RibbonLegendRow, SHORT_RIBBON } from "@/components/gmma/GmmaDualChart";
+import { getBuildInfo } from "@/lib/build-info";
 import { EXAMPLE_GMMA } from "@/lib/gmma-example";
 import { getUser } from "@/lib/supabase/server";
+
+// Build-time constant — resolved once at module load, not per render.
+const buildInfo = getBuildInfo();
 
 interface RuleCard {
   n: string;
@@ -234,6 +238,14 @@ export default async function MarketingPage() {
               santiagovasco.com
             </a>
           </p>
+          {buildInfo && (
+            <p>
+              Last updated{" "}
+              <time dateTime={buildInfo.iso} title={buildInfo.iso}>
+                {buildInfo.label}
+              </time>
+            </p>
+          )}
         </div>
       </footer>
     </main>

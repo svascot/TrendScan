@@ -20,6 +20,22 @@
 import { evaluateGmmaTicker, type GmmaEvalOptions } from "./gmma-scanner";
 import { type DailyBar } from "./scanner";
 
+// What a signal source has to tell the engine to open a trade. Entry is always
+// the signal bar's close; the source supplies the levels and the ATR the
+// trailing exits ratchet against.
+export interface Signal {
+  sl: number; // absolute $ stop
+  tp: number; // absolute $ target
+  atr: number; // ATR(14) at signal time — used by the trailing exit modes
+  // Optional quality/ranking score carried onto the Trade, so outcomes can be
+  // bucketed by it afterwards (does a high score actually hit TP more often?).
+  score?: number;
+}
+
+// Given the bars visible up to and including "today" (no lookahead), decide
+// whether to enter. Return null for "no signal on this bar".
+export type SignalFn = (ticker: string, barsToDate: readonly DailyBar[]) => Signal | null;
+
 export interface BacktestParams {
   // Exit at the close after this many bars if neither stop nor target is hit.
   maxHoldDays: number;
@@ -27,16 +43,25 @@ export interface BacktestParams {
   // exit (e.g. 0.0005 = 5 bps/side). Folded into the realised R.
   feeRate: number;
   // Don't evaluate a signal until at least this many bars of history exist.
-  // Must be >= the scanner's own minimum (60). Larger = more warm-up realism.
+  // Must be >= the signal source's own minimum (GMMA 60, Trend maLong+1).
+  // Larger = more warm-up realism.
   warmupBars: number;
+  // Which strategy to simulate. Omitted = the GMMA scanner (the original
+  // behavior), configured by `gmma` below.
+  signal?: SignalFn;
   // Strategy-rule overrides passed straight to evaluateGmmaTicker (stop anchor,
   // min-stop floor, RR, TP gate…). Omitted keys fall back to the live defaults.
+  // Ignored when an explicit `signal` is supplied.
   gmma?: Partial<GmmaEvalOptions>;
   // Exit mechanics. Defaults to the fixed TP/SL behavior when omitted.
   exit?: ExitConfig;
   // Market-regime gate: given a signal's date, return false to SKIP the entry
   // (e.g. SPY below its 200-day MA). Omitted = take every signal.
   regimeOk?: (date: string) => boolean;
+  // Ignore signals dated before this day (YYYY-MM-DD). Lets a run pull extra
+  // "preroll" history to warm long indicators (the Trend scanner needs 201
+  // bars for MA200) without those warm-up bars eating into the test window.
+  entryFrom?: string;
 }
 
 export const BACKTEST_DEFAULTS: BacktestParams = {
@@ -64,6 +89,11 @@ export const EXIT_DEFAULTS: ExitConfig = {
 
 export interface Trade {
   ticker: string;
+  // Signal quality score at entry, when the signal source reports one.
+  score?: number;
+  // ATR(14) at entry — lets analysis express the TP/SL distances in volatility
+  // units ("the target was 2.7 ATR away") rather than raw dollars.
+  atrAtEntry: number;
   entryDate: string; // YYYY-MM-DD (close of signal bar)
   entryPrice: number;
   sl: number;
@@ -199,7 +229,19 @@ export function buildRegimeFilter(
   return (date: string) => ok.get(date) ?? false;
 }
 
-// Simulate every trade the GMMA strategy would have taken on one symbol over its
+// The default signal source: the live GMMA scanner, wrapped as a SignalFn.
+export function gmmaSignalFn(opts?: Partial<GmmaEvalOptions>): SignalFn {
+  return (ticker, barsToDate) => {
+    const s = evaluateGmmaTicker(ticker, barsToDate, {
+      ...opts,
+      skipChartBars: true, // backtest never reads chartBars — skip the work
+    });
+    if (!s) return null;
+    return { sl: s.targetSl, tp: s.targetTp, atr: s.atr14 };
+  };
+}
+
+// Simulate every trade the strategy would have taken on one symbol over its
 // full bar history. Bars must be sorted oldest → newest.
 export function simulateTicker(
   ticker: string,
@@ -207,32 +249,37 @@ export function simulateTicker(
   params: BacktestParams,
 ): Trade[] {
   const exitCfg = params.exit ?? EXIT_DEFAULTS;
+  const signalFn = params.signal ?? gmmaSignalFn(params.gmma);
   const trades: Trade[] = [];
   const lastIdx = bars.length - 1;
 
   // Need at least one future bar to resolve a trade.
   let i = Math.max(params.warmupBars, 0);
   while (i < lastIdx) {
+    const date = bars[i].t.slice(0, 10);
+
+    // Preroll gate: bars before the test window only exist to warm indicators.
+    if (params.entryFrom && date < params.entryFrom) {
+      i++;
+      continue;
+    }
+
     // History as the scanner would have seen it on day `i` — no lookahead.
-    const slice = bars.slice(0, i + 1);
-    const signal = evaluateGmmaTicker(ticker, slice, {
-      ...params.gmma,
-      skipChartBars: true, // backtest never reads chartBars — skip the work
-    });
+    const signal = signalFn(ticker, bars.slice(0, i + 1));
     if (!signal) {
       i++;
       continue;
     }
 
     // Market-regime gate: skip the signal if the market isn't in an uptrend.
-    if (params.regimeOk && !params.regimeOk(bars[i].t.slice(0, 10))) {
+    if (params.regimeOk && !params.regimeOk(date)) {
       i++;
       continue;
     }
 
     const entry = bars[i].c; // enter at the signal bar's close
-    const sl = signal.targetSl;
-    const tp = signal.targetTp;
+    const sl = signal.sl;
+    const tp = signal.tp;
     const risk = entry - sl;
     if (risk <= 0) {
       i++;
@@ -247,7 +294,7 @@ export function simulateTicker(
       entry,
       sl,
       tp,
-      signal.atr14,
+      signal.atr,
       risk,
       exitCfg,
     );
@@ -260,7 +307,9 @@ export function simulateTicker(
 
     trades.push({
       ticker,
-      entryDate: bars[i].t.slice(0, 10),
+      ...(signal.score === undefined ? {} : { score: signal.score }),
+      atrAtEntry: round4(signal.atr),
+      entryDate: date,
       entryPrice: round2(entry),
       sl: round2(sl),
       tp: round2(tp),

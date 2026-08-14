@@ -138,11 +138,20 @@ export const W_ATR = 0.20;
 export const W_VOL = 0.15;
 export const W_RSI = 0.10;
 
+// `skipChartBars` omits the 90-bar chart series — the backtest harness never
+// reads it and building it for every simulated bar dominates the runtime.
+// Defaults to false, so live callers are unaffected.
+export interface ScanEvalOptions {
+  velocityClamp?: number;
+  volClamp?: number;
+  skipChartBars?: boolean;
+}
+
 export function evaluateTicker(
   ticker: string,
   bars: readonly DailyBar[],
   rule: ScanRule,
-  opts?: { velocityClamp?: number; volClamp?: number }
+  opts?: ScanEvalOptions
 ): ScanResult | null {
   const base = computeScan(ticker, bars, rule, opts);
   if (!base) return null;
@@ -156,7 +165,7 @@ export function evaluateTickerForWatchlist(
   ticker: string,
   bars: readonly DailyBar[],
   rule: ScanRule,
-  opts?: { velocityClamp?: number; volClamp?: number }
+  opts?: ScanEvalOptions
 ): ScanResult | null {
   const base = computeScan(ticker, bars, rule, opts);
   if (!base) return null;
@@ -176,7 +185,7 @@ function computeScan(
   ticker: string,
   bars: readonly DailyBar[],
   rule: ScanRule,
-  opts?: { velocityClamp?: number; volClamp?: number }
+  opts?: ScanEvalOptions
 ): ComputeScanResult | null {
   // Need enough bars to seed the longest indicator: MA(maLong) + 1.
   // Also requires atrPeriod+1 bars and rocPeriod+1 bars (both well under maLong).
@@ -263,7 +272,7 @@ function computeScan(
       score,
       tier,
       indices: getIndicesFor(ticker),
-      chartBars: lastChartBars(bars),
+      chartBars: opts?.skipChartBars ? [] : lastChartBars(bars),
       breakdown: {
         rule1MacroPass: rule1,
         rule2MomentumPass: rule2,

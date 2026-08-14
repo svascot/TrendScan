@@ -4,6 +4,7 @@ import type { ComponentType, SVGProps } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { getBuildInfo } from "@/lib/build-info";
 import { firstNameFromEmail, initialsFromEmail } from "@/lib/format";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -36,6 +37,9 @@ const NAV: readonly NavItem[] = [
   { href: "/edge", label: "Edge", short: "Edge", icon: EdgeIcon },
   { href: "/settings", label: "Settings", short: "Settings", icon: SettingsIcon },
 ] as const;
+
+// Build-time constant — resolved once at module load, not per render.
+const buildInfo = getBuildInfo();
 
 export function DashboardShell({ email, children }: Props) {
   const pathname = usePathname();
@@ -166,6 +170,14 @@ export function DashboardShell({ email, children }: Props) {
               santiagovasco.com
             </a>
           </p>
+          {buildInfo && (
+            <p>
+              Last updated{" "}
+              <time dateTime={buildInfo.iso} title={buildInfo.iso}>
+                {buildInfo.label}
+              </time>
+            </p>
+          )}
         </footer>
       </div>
 
